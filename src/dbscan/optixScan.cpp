@@ -42,24 +42,23 @@ typedef SbtRecord<RayGenData> RayGenSbtRecord;
 typedef SbtRecord<MissData> MissSbtRecord;
 typedef SbtRecord<HitGroupData> HitGroupSbtRecord;
 
-Timer                    timer;
+Timer timer;
 
 extern "C" void kGenAABB(DATA_TYPE **points, int bvh_id, double radius, unsigned int numPrims, OptixAabb *d_aabb);
-extern "C" void refine_with_cuda(DIST_TYPE** dist, 
-                                 unsigned* dist_flag,
-                                 DATA_TYPE** points,
-                                 DATA_TYPE** queries, 
-                                 int query_num, 
-                                 int data_num, 
-                                 int bvh_num,
-                                 double radius2);
-extern "C" void search_with_cuda(DIST_TYPE** dist, 
-                                 DATA_TYPE** points,
-                                 DATA_TYPE** queries, 
-                                 int query_num, 
-                                 int data_num, 
-                                 int bvh_num,
-                                 double radius2);
+extern "C" void set_label_collect_cores(int* label, 
+										int* nn,
+										DATA_TYPE_3* window,
+										DATA_TYPE_3* out_stride,
+										int window_size,
+										int out_start,
+										int out_end,
+										DATA_TYPE_3* c_out,
+                                        DATA_TYPE_3* ex_cores,
+										DATA_TYPE_3* neo_cores,
+										int* c_out_num,
+										int* ex_cores_num,
+										int* neo_cores_num,
+										int min_pts);
 
 void printUsageAndExit(const char* argv0) {
     std::cerr << "Usage  : " << argv0 << " [options]\n";
@@ -87,9 +86,15 @@ void parse_args(ScanState &state, int argc, char *argv[]) {
             } else {
                 printUsageAndExit(argv[0]);
             }
-        } else if (arg == "--query_file") {
+        } else if (arg == "--window" || arg == "-w") {
             if (i < argc - 1) {
-                state.query_file = argv[++i];
+                state.window = stoi[++i];
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else if (arg == "--stride" || arg == "-s") {
+            if (i < argc - 1) {
+                state.stride = stoi[++i];
             } else {
                 printUsageAndExit(argv[0]);
             }
@@ -108,12 +113,6 @@ void parse_args(ScanState &state, int argc, char *argv[]) {
         } else if (arg == "--radius") {
             if (i < argc - 1) {
                 state.radius = stod(argv[++i]);
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else if (arg == "--query_num") {
-            if (i < argc - 1) {
-                state.query_num = stoi(argv[++i]);
             } else {
                 printUsageAndExit(argv[0]);
             }
@@ -156,72 +155,101 @@ void make_gas(ScanState &state) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
-    const uint32_t vertex_input_flags[1] = {OPTIX_GEOMETRY_FLAG_NONE};
     
-    size_t final_gas_size = 0;
-    int bvh_num = state.dim / 3;
-    state.gas_handle = (OptixTraversableHandle*) malloc(bvh_num * sizeof(OptixTraversableHandle));
+    OptixAabb *d_aabb;
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_aabb), state.window_size * sizeof(OptixAabb)));
+    kGenAABB(state.params.points, state.radius, state.window_size, d_aabb);
+    state.d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
 
-    printf("make_gas, state.radius / sqrt(bvh_num) = %lf\n", state.radius / sqrt(bvh_num));
-    for (int bvh_id = 0; bvh_id < bvh_num; bvh_id++) {
-        OptixAabb *d_aabb;
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_aabb), state.data_num * sizeof(OptixAabb)));
-#if RT_FILTER == 1
-        kGenAABB(state.params.points, bvh_id, state.radius / sqrt(bvh_num), state.data_num, d_aabb);
-#else
-        kGenAABB(state.params.points, bvh_id, state.radius, state.data_num, d_aabb);
-#endif
-        CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
+    OptixBuildInput &vertex_input = state.vertex_input;
+    vertex_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
+    vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
+    vertex_input.customPrimitiveArray.flags = state.vertex_input_flags;
+    vertex_input.customPrimitiveArray.numSbtRecords = 1;
+    vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+    // it's important to pass 0 to sbtIndexOffsetBuffer
+    vertex_input.customPrimitiveArray.sbtIndexOffsetBuffer = 0;
+    vertex_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
+    vertex_input.customPrimitiveArray.primitiveIndexOffset = 0;
 
-        // Our build input is a simple list of non-indexed triangle vertices
-        OptixBuildInput vertex_input = {};
-        vertex_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
-        vertex_input.customPrimitiveArray.aabbBuffers = &d_aabb_ptr;
-        vertex_input.customPrimitiveArray.flags = vertex_input_flags;
-        vertex_input.customPrimitiveArray.numSbtRecords = 1;
-        vertex_input.customPrimitiveArray.numPrimitives = state.data_num;
-        // it's important to pass 0 to sbtIndexOffsetBuffer
-        vertex_input.customPrimitiveArray.sbtIndexOffsetBuffer = 0;
-        vertex_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
-        vertex_input.customPrimitiveArray.primitiveIndexOffset = 0;
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    state.gas_buffer_sizes = gas_buffer_sizes;
+    CUDA_CHECK(cudaMalloc(
+               reinterpret_cast<void **>(&state.d_temp_buffer_gas),
+               gas_buffer_sizes.tempSizeInBytes
+              ));
+    
+    // non-compacted output and size of compacted GAS.
+    // CUdeviceptr d_buffer_temp_output_gas_and_compacted_size;
+    size_t compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes.outputSizeInBytes, 8ull);
+    CUDA_CHECK(cudaMalloc(
+               reinterpret_cast<void **>(&state.d_gas_output_buffer),
+               compactedSizeOffset + 8
+              ));
 
-        OptixAccelBufferSizes gas_buffer_sizes;
-        CUdeviceptr d_temp_buffer_gas, d_gas_output_buffer;
-        OPTIX_CHECK(optixAccelComputeMemoryUsage(
-            state.context,
-            &accel_options,
-            &vertex_input,
-            1, // Number of build inputs
-            &gas_buffer_sizes));
-        CUDA_CHECK(cudaMalloc(
-            reinterpret_cast<void **>(&d_temp_buffer_gas),
-            gas_buffer_sizes.tempSizeInBytes));
-
-        // non-compacted output and size of compacted GAS.
-        // CUdeviceptr d_buffer_temp_output_gas_and_compacted_size;
-        size_t compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes.outputSizeInBytes, 8ull);
-        CUDA_CHECK(cudaMalloc(
-            reinterpret_cast<void **>(&d_gas_output_buffer),
-            compactedSizeOffset + 8));
-
-        OPTIX_CHECK(optixAccelBuild(
-            state.context,
-            0, // CUDA stream
-            &accel_options,
-            &vertex_input,
-            1, // num build inputs
-            d_temp_buffer_gas,
-            gas_buffer_sizes.tempSizeInBytes,
-            d_gas_output_buffer,
-            gas_buffer_sizes.outputSizeInBytes,
-            &state.gas_handle[bvh_id],
-            nullptr,
-            0));
-        final_gas_size += compactedSizeOffset;
-        CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_temp_buffer_gas)));
-    }
-    std::cerr << "Final GAS size: " << (float)final_gas_size / (1024 * 1024) << std::endl;
+    size_t final_gas_size;
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &vertex_input,
+                1, // num build inputs
+                state.d_temp_buffer_gas,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &state.gas_handle,
+                nullptr,
+                0
+        ));
+    final_gas_size = compactedSizeOffset;
+    std::cerr << "Final GAS size: " << (float)final_gas_size / (1024 * 1024) << " MB" << std::endl;
     printf("Final GAS size: %f MB\n", (float)final_gas_size / (1024 * 1024));
+}
+
+void rebuild_gas(ScanState &state, int update_pos) {
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    // update aabb
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    kGenAABB(state.params.window + update_pos * state.stride, 
+             state.radius, 
+             state.stride, 
+             d_aabb + update_pos * state.stride);
+
+    // recompute gas_buffer_sizes
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &state.vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &state.vertex_input,
+                1, // num build inputs
+                state.d_temp_buffer_gas,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &state.gas_handle,
+                nullptr,
+                0
+        ));
+    CUDA_SYNC_CHECK();
 }
 
 void make_module(ScanState &state) {
@@ -431,9 +459,10 @@ void initialize_params(ScanState &state) {
 
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_params), sizeof(Params)));
     
-    CUDA_CHECK(cudaMalloc(&state.params.handle, state.dim / 3 * sizeof(OptixTraversableHandle)));
-    CUDA_CHECK(cudaMemcpy(state.params.handle, state.gas_handle, state.dim / 3 * sizeof(OptixTraversableHandle), cudaMemcpyHostToDevice));
-    
+    // CUDA_CHECK(cudaMalloc(&state.params.handle, state.dim / 3 * sizeof(OptixTraversableHandle)));
+    // CUDA_CHECK(cudaMemcpy(state.params.handle, state.gas_handle, state.dim / 3 * sizeof(OptixTraversableHandle), cudaMemcpyHostToDevice));
+    state.params.pre_handle = state.pre_gas_handle;
+    state.params.handle = state.gas_handle;
 
     DIST_TYPE *h_dist;
     state.h_dist_temp = (DIST_TYPE**) malloc(state.query_num * sizeof(DIST_TYPE*));
@@ -494,100 +523,116 @@ void log_common_info(ScanState &state) {
     std::cout << "radius: " << state.radius << ", radius2: " << state.params.radius2 << ", sub_radius2: " << state.params.sub_radius2 << std::endl;
 }
 
-void search(ScanState &state) {
-    timer.startTimer(&timer.copy_queries_h2d);
-    // Prepare queries
-    for (int i = 0; i < state.query_num; i++) {
-        CUDA_CHECK(cudaMemcpy(state.h_queries_temp[i], state.h_queries[i], state.dim * sizeof(DATA_TYPE), cudaMemcpyHostToDevice));
-    }
-    CUDA_CHECK(cudaMemcpy(state.params.queries, state.h_queries_temp, state.query_num * sizeof(DATA_TYPE*), cudaMemcpyHostToDevice));
+void cluster(ScanState &state) {
+    // * split
+    // 找到 ex-cores 的 R-
+    // 1.从上一个 BVH tree 中查这些点的相邻关系，从每个点发射光线，记录邻居，之后找到集合；R- 集合中暂存放 ex-core 的具体的 index
+    // 2.找到所有的core，记录下来 [暂时忽略这些工程优化]
+    // 3.使用数组存下所有点的邻居关系
 
-    // Prepare parameters
-    state.params.data_num   = state.data_num;
-    state.params.dim        = state.dim;
-    state.params.unsigned_len = state.unsigned_len;
-    state.params.radius     = state.radius;
-    state.params.radius2    = state.radius * state.radius;
-    state.params.bvh_num    = state.dim / 3;
-    state.params.sub_radius2= state.params.radius2 / state.params.bvh_num;
-    state.params.tmin       = 0.0f;
-    state.params.tmax       = FLT_MIN;
-    timer.stopTimer(&timer.copy_queries_h2d);
+    // TODO: 改变 pipeline
+    // TODO: 从所有 ex-cores 发射光线，设置 R_out_f[] 和 M_out_f[]
+    OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.stride, 1, 1)); // 找新的邻居
+    CUDA_SYNC_CHECK();
+    // 得到 R_out_f[]，处理后得到每个点属于的 R-
+    // 得到 M_out_f[]，处理后得到每个点属于的 M- 集合
+    
+    // TODO: 遍历每个 M- 集合，队列的处理？
+    
+    
+    // 遍历每个 M- 集合，判别其中点的连通关系；从一个点开始 BFS，标记访问过的 M-(p) 中的点，如果队列已空，从未访问过的 M-(p) 中找点，再次 BFS
+}
+
+void search(ScanState &state) {
+    int remaining_data_num  = state.data_num - state.window;
+    int unit_num            = state.window / state.stride;
+    int update_pos          = 0;
+    int stride_num          = 0;
+    int window_left         = 0;
+    int window_right        = state.window;
+    state.new_stride        = state.h_data + state.window;
 
     log_common_info(state);
-    
-    CUDA_CHECK(cudaMemcpy(
-        reinterpret_cast<void *>(state.d_params),
-        &state.params,
-        sizeof(Params),
-        cudaMemcpyHostToDevice)); // 对于GPU中的查询，实际无需数据在host与device之间传输
 
-    // Warmup
-//     OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.query_num, state.dim / 3, 1));
-//     CUDA_SYNC_CHECK();
+    // * Start sliding
+    while (remaining_data_num >= state.stride) {
+        timer.startTimer(&timer.total);
 
-// #if RT_FILTER == 1
-//     refine_with_cuda(state.params.dist,
-//                      state.params.dist_flag,
-//                      state.params.points,
-//                      state.params.queries,
-//                      state.query_num,
-//                      state.data_num,
-//                      state.params.bvh_num,
-//                      state.params.radius2);
-//     CUDA_SYNC_CHECK();
-// #endif
-
-#if DEBUG_INFO == 0
-    // Timing
-    int runs = 5; // 5
-    DIST_TYPE *tmp_dist = (DIST_TYPE *) malloc(state.data_num * sizeof(DIST_TYPE));
-    for (int i = 0; i < state.data_num; i++) tmp_dist[i] = 0;
-    for (int i = 0; i < runs; i++) {
-        // Clear dist array
-        for (int i = 0; i < state.query_num; i++) {
-            CUDA_CHECK(cudaMemcpy(state.h_dist_temp[i], tmp_dist, state.data_num * sizeof(DIST_TYPE), cudaMemcpyHostToDevice));
-        }
-
-        timer.startTimer(&timer.cuda_refine);
-        search_with_cuda(state.params.dist,
-                         state.params.points,
-                         state.params.queries,
-                         state.query_num,
-                         state.data_num,
-                         state.params.bvh_num,
-                         state.params.radius2);
+        state.params.out = state.params.window + update_pos * state.stride;
+        
+        state.params.operation = 0;
+        CUDA_CHECK(cudaMemcpy(
+            reinterpret_cast<void *>(state.d_params),
+            &state.params,
+            sizeof(Params),
+            cudaMemcpyHostToDevice));
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.stride, 1, 1));
         CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.cuda_refine);
 
-// #if RT_FILTER == 1
-//         CUDA_CHECK(cudaMemset(state.params.dist_flag, 0, state.dist_flag_len));
-// #endif
 
-//         timer.startTimer(&timer.search_neighbors);
-//         OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.query_num, state.dim / 3, 1));
-//         CUDA_SYNC_CHECK(); // ! 若后面用cuda refine，则该同步方法似乎不再需要？
-//         timer.stopTimer(&timer.search_neighbors);
+        CUDA_CHECK(cudaMemcpy( // 保留 out stride
+            state.out_stride,
+            state.params.out,
+            state.stride * sizeof(DATA_TYPE_3),
+            cudaMemcpyDeviceToDevice));        
+        timer.startTimer(&timer.copy_new_points_h2d);
+        CUDA_CHECK(cudaMemcpy(
+            state.params.out,
+            state.new_stride,
+            state.stride * sizeof(DATA_TYPE_3),
+            cudaMemcpyHostToDevice));
+        timer.stopTimer(&timer.copy_new_points_h2d);
+        CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride, 0, state.stride * sizeof(int))); // 设置 nn 为 0
 
-// #if RT_FILTER == 1
-//         // cuda来找剩下的点，使用kernel方法
-//         timer.startTimer(&timer.cuda_refine);
-//         refine_with_cuda(state.params.dist,
-//                          state.params.dist_flag,
-//                          state.params.points,
-//                          state.params.queries,
-//                          state.query_num,
-//                          state.data_num,
-//                          state.params.bvh_num,
-//                          state.params.radius2);
-//         CUDA_SYNC_CHECK();
-//         timer.stopTimer(&timer.cuda_refine);
-// #endif
+        state.params.operation = 1;
+        CUDA_CHECK(cudaMemcpy(
+            reinterpret_cast<void *>(state.d_params),
+            &state.params,
+            sizeof(Params),
+            cudaMemcpyHostToDevice));
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.stride, 1, 1)); // 找新的邻居
+        CUDA_SYNC_CHECK();
+
+        // * collect
+        set_label_collect_cores(state.params.label,
+                                state.params.nn,
+                                state.params.window,
+                                state.params.out_stride,
+                                state.window_size,
+                                update_pos * state.stride,
+                                (update_pos + 1) * state.stride,
+                                state.params.c_out,
+                                state.params.ex_cores,
+                                state.params.neo_cores,
+                                state.params.c_out_num,
+                                state.params.ex_cores_num,
+                                state.params.neo_cores_num);
+
+        // 已经获取到 Cout, ex-cores, neo-cores，新 window 中的 core 也已经设置好，border 和 noise 尚未确定
+
+        timer.startTimer(&timer.build_bvh);
+        rebuild_gas(state, update_pos);
+        timer.stopTimer(&timer.build_bvh);
+
+        timer.startTimer(&timer.detect_outlier);
+        cluster(state);
+        timer.stopTimer(&timer.detect_outlier);
+        
+        timer.startTimer(&timer.copy_outlier_d2h);
+
+        timer.stopTimer(&timer.copy_outlier_d2h);
+
+        stride_num++;
+        remaining_data_num  -= state.stride;
+        state.new_stride    += state.stride;
+        update_pos           = (update_pos + 1) % unit_num;
+        window_left         += state.stride;
+        window_right        += state.stride;
+        timer.stopTimer(&timer.total);
     }
+
     timer.search_neighbors /= runs;
     timer.cuda_refine /= runs;
-    free(tmp_dist);
-#endif
 }
 
 void result_d2h(ScanState &state) { // https://www.cnblogs.com/ybqjymy/p/17462877.html
@@ -637,58 +682,6 @@ void result_d2h(ScanState &state) { // https://www.cnblogs.com/ybqjymy/p/1746287
 #endif
 }
 
-// void calc_total_hit_intersection_each_window(ScanState &state) {
-//     int ray_num = OPTIMIZATION == 1 ? state.params.ray_origin_num : state.window;
-//     if (OPTIMIZATION == 0 && state.launch_ray_num != 0) {
-//         ray_num = state.launch_ray_num;
-//     }
-//     int bvh_node_num = OPTIMIZATION == 2 ? state.params.ray_origin_num : state.window;
-//     unsigned total_hit = 0, total_intersection_test = 0;
-//     for (int i = 0; i < ray_num; i++) {
-//         total_hit += state.h_ray_hits[i];
-//         total_intersection_test += state.h_ray_intersections[i];
-//     }
-//     state.total_hit     += total_hit;
-//     state.total_is_test += total_intersection_test;
-//     state.total_is_test_per_ray += 1.0 * total_intersection_test / ray_num;
-//     state.total_hit_per_ray     += 1.0 * total_hit / ray_num;
-//     std::cout << "Total_hit: " << total_hit << ", " << "Total_intersection_test: " << total_intersection_test << std::endl;
-//     std::cout << "BVH_Node: " << bvh_node_num << ", Cast_Ray_Num: " << ray_num << std::endl;
-// }
-
-// void calc_ray_hits(ScanState &state, unsigned *ray_hits) {
-//     map<unsigned, int> hitNum_rayNum;
-//     int sum = 0;
-//     int ray_num = OPTIMIZATION == 1 ? state.params.ray_origin_num : state.window;
-//     if (OPTIMIZATION == 0 && state.launch_ray_num != 0) {
-//         ray_num = state.launch_ray_num;
-//     }
-//     for (int i = 0; i < ray_num; i++) {
-//         sum += ray_hits[i];
-//         if (hitNum_rayNum.count(ray_hits[i])) {
-//             hitNum_rayNum[ray_hits[i]]++;
-//         } else {
-//             hitNum_rayNum[ray_hits[i]] = 1;
-//         }       
-//     }
-
-//     int min, max, median = -1;
-//     double avg;
-//     int tmp_sum = 0;
-//     min = hitNum_rayNum.begin()->first;
-//     max = (--hitNum_rayNum.end())->first;
-//     avg = 1.0 * sum / ray_num;
-//     printf("hit num: ray num\n");
-//     for (auto &item: hitNum_rayNum) {
-//         fprintf(stdout, "%d: %d\n", item.first, item.second);
-//         tmp_sum += item.second;
-//         if (median == -1 && tmp_sum >= ray_num / 2) {
-//             median = item.first;
-//         }
-//     }
-//     printf("min: %d, max: %d, average: %lf, median: %d\n", min, max, avg, median);
-// }
-
 void cleanup(ScanState &state) {
     // free host memory
     free(state.vertices);
@@ -721,19 +714,7 @@ int main(int argc, char *argv[]) {
     setbuf(stdout,NULL); // https://blog.csdn.net/moshiyaofei/article/details/107297472
     ScanState state;
     parse_args(state, argc, argv);
-    if (state.data_file.find("uniform") != string::npos) {
-        read_data(state.data_file, state.query_file, state);
-    } else if (state.data_file.find("sift") != string::npos) {
-        read_data_from_sift1m_128d(state.data_file, state.query_file, state);
-    } else if (state.data_file.find("gist") != string::npos) {
-        read_data_from_gist_960d(state.data_file, state.query_file, state);
-    } else {
-        cerr << "Invalid data file!" << endl;
-        exit(-1);
-    }
     
-    size_t start;
-    start_gpu_mem(&start);
     initialize_optix(state);
     data_h2d(state);
     make_gas(state);                    // Acceleration handling
@@ -742,14 +723,9 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     initialize_params(state);
-    size_t used;
-    stop_gpu_mem(&start, &used);
-    std::cout << "[Mem] total gpu mem: " << 1.0 * used / (1 << 20) << std::endl;
     search(state);
     result_d2h(state);
     timer.showTime(state.query_num);
-    // check(state);
-    check_single_thread(state);
     cleanup(state);
     return 0;
 }

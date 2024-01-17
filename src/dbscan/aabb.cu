@@ -160,3 +160,88 @@ extern "C" void search_with_cuda(DIST_TYPE** dist,
     radius2
   );
 }
+
+__global__ void collect_t(int* label,
+						  int* nn,
+						  DATA_TYPE_3* window,
+						  DATA_TYPE_3* out_stride,
+						  int window_size,
+						  int out_start,
+						  int out_end,
+						  DATA_TYPE_3* c_out,
+						  DATA_TYPE_3* ex_cores,
+						  DATA_TYPE_3* neo_cores,
+						  int* c_out_num,
+						  int* ex_cores_num,
+						  int* neo_cores_num,
+						  int min_pts) {
+	int left = (window_size / blockDim.x) * threadIdx.x;
+	int right = left + window_size / blockDim.x;
+	if (threadIdx.x == blockDim.x - 1) right = window_size; // 最后一个线程少一些
+	for (int i = left; i < right; i++) {
+		if (i >= out_start && i < out_end) {
+			if (label[i] == 0) {							// 原来是 core，现在 out
+				int idx = atomicAdd(c_out_num, 1);
+				c_out[idx] = out_stride[i - out_start]; 	// 记录 out 的部分
+				idx = atomicAdd(ex_cores_num, 1);
+				ex_cores[idx] = out_stride[i - out_start];
+			}
+			if (nn[i] > min_pts) {							// 现在是 core
+				label[i] = 0;
+				int idx = atomicAdd(neo_cores_num, 1);
+				neo_cores[idx] = window[i];
+			} else {
+				label[i] = 2; 								// 现在不是 core，可暂时初始化为 noise
+			}
+		} else {
+			if (nn[i] > min_pts && label[i] != 0) {			// 原来不是现在是
+				int idx = atomicAdd(neo_cores_num, 1);
+				neo_cores[idx] = window[i];
+				label[i] = 0;
+			} else if (nn[i] <= min_pts && label[i] == 0) { // 原来是现在不是
+				int idx = atomicAdd(c_out_num, 1);
+				c_out[idx] = window[i];
+				label[i] = 2;								// 将 Wcurr 中 ex-core label 初始化为 noise
+			}
+		}
+	}
+}
+
+/**
+ * 1.收集 c_out, ex_cores, neo_cores
+ * 2.label 设置
+*/
+extern "C" void set_label_collect_cores(int* label, 
+										int* nn,
+										DATA_TYPE_3* window,
+										DATA_TYPE_3* out_stride,
+										int window_size,
+										int out_start,
+										int out_end,
+										DATA_TYPE_3* c_out,
+                                        DATA_TYPE_3* ex_cores,
+										DATA_TYPE_3* neo_cores,
+										int* c_out_num,
+										int* ex_cores_num,
+										int* neo_cores_num,
+										int min_pts) {
+  unsigned threadsPerBlock = 64;
+  unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
+
+  collect_t <<<numOfBlocks, threadsPerBlock>>> (
+	label,
+	nn,	
+	window,
+	out_stride,
+	window_size,
+	out_start,
+	out_end,
+	c_out,
+	ex_cores,
+	neo_cores,
+	c_out_num,
+	ex_cores_num,
+	neo_cores_num,
+	min_pts
+  );
+}

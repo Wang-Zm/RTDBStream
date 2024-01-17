@@ -11,28 +11,42 @@
 typedef double DIST_TYPE;
 #if DATA_WIDTH == 32
 typedef float DATA_TYPE;
+typedef float3 DATA_TYPE_3;
 #else
 typedef double DATA_TYPE;
+typedef double3 DATA_TYPE_3;
 #endif
 
-#define RT_FILTER 1 // 0时有正确结果，1时出现错误结果
-
 struct Params {
-    DATA_TYPE**             points;
-    DATA_TYPE**             queries;    
-    OptixTraversableHandle* handle;
+    OptixTraversableHandle  pre_handle;
+    OptixTraversableHandle  handle;
     
     float                   tmin;
     float                   tmax;
     int                     data_num;
+    DATA_TYPE_3*            pre_window;
+    DATA_TYPE_3*            window;
+    DATA_TYPE_3*            out;
+    int*                    label; // 0(core), 1(border), 2(noise)
+    int*                    cluster_id;
+    int*                    nn; // number of neighbors
+    int                     operation;
+    DATA_TYPE_3*            ex_cores;
+    DATA_TYPE_3*            neo_cores;
+    DATA_TYPE_3*            c_out;
+    DATA_TYPE_3*            out_stride;
+    int*                    c_out_num;
+    int*                    ex_cores_num;
+    int*                    neo_cores_num;
+    int*                    ex_cores_idx; // 在 pre_window 中的索引
+    int*                    R_out_f;
+    int*                    M_out_f;
+
     int                     bvh_num;
-    DIST_TYPE**             dist;
-    unsigned*               dist_flag;
     double                  radius;
     double                  radius2;
-    DATA_TYPE               sub_radius2;
+    int                     min_pts
     int                     dim;
-    int                     unsigned_len;
     unsigned*               intersection_test_num;
     unsigned*               hit_num;
 

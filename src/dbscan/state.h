@@ -60,7 +60,13 @@ struct ScanState
     Params                          params;
     CUdeviceptr                     d_params;
     OptixDeviceContext              context                   = nullptr;
+    OptixTraversableHandle*         pre_gas_handle;
     OptixTraversableHandle*         gas_handle;
+    CUdeviceptr                     d_gas_output_buffer       = 0;
+    OptixBuildInput                 vertex_input              = {};
+    CUdeviceptr                     d_temp_buffer_gas         = 0;
+    OptixAccelBufferSizes           gas_buffer_sizes;
+    const uint32_t                  vertex_input_flags[1]     = {OPTIX_GEOMETRY_FLAG_NONE};
 
     OptixModule                     module                    = nullptr;
 
@@ -74,26 +80,15 @@ struct ScanState
     OptixShaderBindingTable         sbt                       = {}; 
 
     std::string                     data_file;
-    std::string                     query_file;
     int                             data_num;
-    int                             query_num;
-    DATA_TYPE**                     vertices;
-    DATA_TYPE**                     h_queries;
-    int                             dim;
-    int                             unsigned_len;
-    double                          radius;
+    DATA_TYPE_3*                    h_data;
     DATA_TYPE*                      max_value;
     DATA_TYPE*                      min_value;
-    DIST_TYPE**                     h_dist;
-    DIST_TYPE**                     h_dist_temp;
-    DATA_TYPE**                     h_queries_temp;
-    unsigned*                       h_dist_flag;
-    size_t                          dist_flag_len;
-    int*                            queries_neighbor_num;
-    // vector<int>*                    queries_neighbors;
-    // vector<DIST_TYPE>*              queries_neighbor_dist;
-    vector<vector<int>>             queries_neighbors;
-    vector<vector<DIST_TYPE>>       queries_neighbor_dist;
+    int                             dim;
+    int                             window_size;
+    int                             stride_size;
+    double                          radius;
+    int                             min_pts;
 
     unsigned*                       h_ray_hits;
     unsigned*                       h_ray_intersections;
