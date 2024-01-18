@@ -60,46 +60,50 @@ struct ScanState
     Params                          params;
     CUdeviceptr                     d_params;
     OptixDeviceContext              context                   = nullptr;
-    OptixTraversableHandle*         pre_gas_handle;
-    OptixTraversableHandle*         gas_handle;
+    // OptixTraversableHandle          pre_gas_handle;
+    OptixTraversableHandle          gas_handle;
     CUdeviceptr                     d_gas_output_buffer       = 0;
     OptixBuildInput                 vertex_input              = {};
     CUdeviceptr                     d_temp_buffer_gas         = 0;
     OptixAccelBufferSizes           gas_buffer_sizes;
     const uint32_t                  vertex_input_flags[1]     = {OPTIX_GEOMETRY_FLAG_NONE};
+    CUdeviceptr                     d_aabb_ptr                = 0;
+    DATA_TYPE_3*                    new_stride;
 
     OptixModule                     module                    = nullptr;
 
     OptixProgramGroup               raygen_prog_group         = nullptr;
     OptixProgramGroup               miss_prog_group           = nullptr;
     OptixProgramGroup               hitgroup_prog_group       = nullptr;
+    OptixProgramGroup               raygen_cluster            = nullptr;
+    OptixProgramGroup               hitgroup_cluster          = nullptr;
 
     OptixPipeline                   pipeline                  = nullptr;
+    OptixPipeline                   pipeline_cluster          = nullptr;
     OptixPipelineCompileOptions     pipeline_compile_options  = {};
 
     OptixShaderBindingTable         sbt                       = {}; 
+    OptixShaderBindingTable         sbt_cluster               = {}; 
 
     std::string                     data_file;
     int                             data_num;
     DATA_TYPE_3*                    h_data;
     DATA_TYPE*                      max_value;
     DATA_TYPE*                      min_value;
-    int                             dim;
+    // int                             dim;
     int                             window_size;
     int                             stride_size;
-    double                          radius;
+    DATA_TYPE                       radius;
     int                             min_pts;
+    int*                            h_label;
+    int*                            h_cluster_id;
 
     unsigned*                       h_ray_hits;
     unsigned*                       h_ray_intersections;
 };
 
-void read_data(string& data_file, string& query_file, ScanState &state);
-void read_data_from_sift1m_128d(string& data_file, string& query_file, ScanState &state);
-void read_data_from_gist_960d(string& data_file, string& query_file, ScanState &state);
+void read_data_from_tao(string& data_file, ScanState &state);
 size_t get_cpu_memory_usage();
 void start_gpu_mem(size_t* avail_mem);
 void stop_gpu_mem(size_t* avail_mem, size_t* used);
-void check(ScanState &state);
-void check_single_thread(ScanState &state);
 #endif

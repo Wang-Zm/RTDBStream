@@ -9,10 +9,17 @@ class Timer{
 
   double timebase;
 
-  double copy_queries_h2d;
-  double search_neighbors;
-  double cuda_refine;
-  double copy_results_d2h;
+  double build_bvh;
+  double out_stride;
+  double rebuild_bvh;
+  double in_stride;
+  double find_cores;
+  double set_cluster_id;
+  double union_cluster_id;
+  double copy_cluster_d2h;
+
+  double cuda_find_neighbors;
+  double cuda_set_clusters;
 
   double total;
 
@@ -24,10 +31,18 @@ class Timer{
   }
 
   void clear() {
-    copy_queries_h2d = 0;
-    search_neighbors = 0;
-    cuda_refine      = 0;
-    copy_results_d2h = 0;
+    build_bvh = 0;
+    out_stride = 0;
+    rebuild_bvh = 0;
+    in_stride = 0;
+    find_cores = 0;
+    set_cluster_id = 0;
+    union_cluster_id = 0;
+    copy_cluster_d2h = 0;
+
+    cuda_find_neighbors = 0;
+    cuda_set_clusters = 0;
+
     total = 0;
   }
   
@@ -72,10 +87,18 @@ class Timer{
     cout << endl;
     cout << "###########   Time  ##########" << endl;
     
-    cout << "[Time] copy queries h2d: " << copy_queries_h2d / query_num << " ms" << endl;
-    cout << "[Time] search neighbors: " << search_neighbors / query_num << " ms" << endl;
-    cout << "[Time] cuda refine: " << cuda_refine / query_num << " ms" << endl;
-    cout << "[Time] copy results d2h: " << copy_results_d2h / query_num << " ms" << endl;
+    cout << "[Time] out_stride: " << out_stride / query_num << " ms" << endl;
+    cout << "[Time] rebuild_bvh: " << rebuild_bvh / query_num << " ms" << endl;
+    cout << "[Time] in_stride: " << in_stride / query_num << " ms" << endl;
+    cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
+    cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
+    cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
+    cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
+    
+    cout << "[Time] cuda_find_neighbors: " << cuda_find_neighbors / query_num << " ms" << endl;
+    cout << "[Time] cuda_set_clusters: " << cuda_set_clusters / query_num << " ms" << endl;
+    
+    cout << "[Time] total: " << total / query_num << " ms" << endl;
     // cout << "[Time] total: " << copy_queries_h2d + search_neighbors + copy_results_d2h << " ms" << endl;
 
     cout << "##############################" << endl;
