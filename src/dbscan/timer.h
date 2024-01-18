@@ -18,6 +18,11 @@ class Timer{
   double union_cluster_id;
   double copy_cluster_d2h;
 
+  double out_stride_bvh;
+  double out_stride_ray;
+  double in_stride_bvh;
+  double in_stride_ray;
+
   double cuda_find_neighbors;
   double cuda_set_clusters;
 
@@ -39,6 +44,11 @@ class Timer{
     set_cluster_id = 0;
     union_cluster_id = 0;
     copy_cluster_d2h = 0;
+
+    out_stride_bvh = 0;
+    out_stride_ray = 0;
+    in_stride_bvh  = 0;
+    in_stride_ray  = 0;
 
     cuda_find_neighbors = 0;
     cuda_set_clusters = 0;
@@ -87,13 +97,19 @@ class Timer{
     cout << endl;
     cout << "###########   Time  ##########" << endl;
     
-    cout << "[Time] out_stride: " << out_stride / query_num << " ms" << endl;
-    cout << "[Time] rebuild_bvh: " << rebuild_bvh / query_num << " ms" << endl;
-    cout << "[Time] in_stride: " << in_stride / query_num << " ms" << endl;
+    // cout << "[Time] out_stride: " << out_stride / query_num << " ms" << endl;
+    // cout << "[Time] rebuild_bvh: " << rebuild_bvh / query_num << " ms" << endl;
+    // cout << "[Time] in_stride: " << in_stride / query_num << " ms" << endl;
+
+    cout << "[Time] out_stride_bvh: " << out_stride_bvh / query_num << " ms" << endl;
+    cout << "[Time] out_stride_ray: " << out_stride_ray / query_num << " ms" << endl;
+    cout << "[Time] in_stride_bvh: " << in_stride_bvh / query_num << " ms" << endl;
+    cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
+
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
     cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
-    cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
+    // cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
     
     cout << "[Time] cuda_find_neighbors: " << cuda_find_neighbors / query_num << " ms" << endl;
     cout << "[Time] cuda_set_clusters: " << cuda_set_clusters / query_num << " ms" << endl;

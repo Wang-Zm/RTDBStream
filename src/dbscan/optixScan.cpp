@@ -47,7 +47,7 @@ Timer timer;
 extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrims, OptixAabb *d_aabb);
 extern "C" void find_cores(int* label, int* nn, int window_size, int min_pts);
 extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);
-extern "C" void find_neighbors(int* label, int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
+extern "C" void find_neighbors(int* label, int* nn, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
 extern "C" void set_cluster_id(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2);
 
 void printUsageAndExit(const char* argv0) {
@@ -226,6 +226,50 @@ void rebuild_gas(ScanState &state, int update_pos) {
                 state.d_gas_output_buffer,
                 gas_buffer_sizes.outputSizeInBytes,
                 &state.gas_handle,
+                nullptr,
+                0
+        ));
+    CUDA_SYNC_CHECK();
+}
+
+void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle) {
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    // update aabb
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    if (gas_handle == state.in_stride_gas_handle) {
+        kGenAABB(state.params.window + update_pos * state.stride_size,
+                state.radius,
+                state.stride_size,
+                d_aabb + update_pos * state.stride_size);
+    }
+
+    CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb + update_pos * state.stride_size);
+    state.vertex_input.customPrimitiveArray.aabbBuffers = &d_aabb_ptr;
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.stride_size;
+
+    // recompute gas_buffer_sizes
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &state.vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &state.vertex_input,
+                1, // num build inputs
+                state.d_temp_buffer_gas,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &gas_handle,
                 nullptr,
                 0
         ));
@@ -596,12 +640,8 @@ void search(ScanState &state) {
     CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
     make_gas(state);
     printf("[Step] Initialize the first window - build BVH tree...\n");
-    state.params.handle = state.gas_handle;
-    state.params.out = state.params.window;
-    state.params.operation = 1;
-    CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int))); // ! 无需设置 label，之前的 label 标记已无作用
-    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-    OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
+    CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
+    find_neighbors(state.params.label, state.params.nn, state.params.cluster_id, state.params.window, state.window_size, state.params.radius2, state.min_pts);
     CUDA_SYNC_CHECK();
     printf("[Step] Initialize the first window - get NN...\n");
 
@@ -612,34 +652,32 @@ void search(ScanState &state) {
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
         
-#if MODE == 0
-        // * use RT
         state.params.out = state.params.window + update_pos * state.stride_size;
-        // out stride
-        timer.startTimer(&timer.out_stride);
+#if MODE == 0 // * use RT
+        timer.startTimer(&timer.out_stride_bvh);
+        rebuild_gas_stride(state, update_pos, state.out_stride_gas_handle);
+        timer.stopTimer(&timer.out_stride_bvh);
+        timer.startTimer(&timer.out_stride_ray);
         state.params.operation = 0; // nn--
+        state.params.out_stride_handle = state.out_stride_gas_handle;
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.stride_size, 1, 1));
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.out_stride);
-        // printf("    [Step] out stride\n");
+        timer.stopTimer(&timer.out_stride_ray);
 
-        // 插入 in stride
-        timer.startTimer(&timer.rebuild_bvh);
-        CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-        rebuild_gas(state, update_pos);
-        // 重置 in/out stride 部分 nn
-        CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
-        timer.stopTimer(&timer.rebuild_bvh);
-        // printf("    [Step] rebuild BVH tree\n");
-
-        timer.startTimer(&timer.in_stride);
+        timer.startTimer(&timer.in_stride_bvh);
+        rebuild_gas_stride(state, update_pos, state.in_stride_gas_handle);
+        timer.stopTimer(&timer.in_stride_bvh);
+        timer.startTimer(&timer.in_stride_ray);
         state.params.operation = 1; // nn++
+        state.params.in_stride_handle = state.in_stride_gas_handle;
+        state.params.stride_left = update_pos * state.stride_size;
+        state.params.stride_right = state.params.stride_left + state.stride_size;
+        CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.stride_size, 1, 1));
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.in_stride);
-        // printf("    [Step] in stride\n");
+        timer.stopTimer(&timer.in_stride_ray);
 
         // set labels and find cores
         timer.startTimer(&timer.find_cores);
@@ -649,21 +687,20 @@ void search(ScanState &state) {
 
         // 根据获取到的 core 开始 union，设置 cluster_id
         timer.startTimer(&timer.set_cluster_id);
-        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
+        // OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
+        set_cluster_id(state.params.label, state.params.cluster_id, state.params.window, state.window_size, state.params.radius2); // TODO: 使用 RT
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_cluster_id);
         // printf("    [Step] set cluster_id\n");
 
-
-#else
-        // ! 使用 cuda 暴搜替换：1）所有点的邻居个数，确定 core 2）再扫一遍，找 border
-        // * use CUDA
+#else // * use CUDA
+        // 使用 cuda 暴搜替换：1）所有点的邻居个数，确定 core 2）再扫一遍，找 border
         timer.startTimer(&timer.cuda_find_neighbors);
         // update window
         CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
         // reset nn
-        CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
-        find_neighbors(state.params.label, state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
+        CUDA_CHECK(cudaMemset(state.params.nn, 0, state.stride_size * sizeof(int)));
+        find_neighbors(state.params.label, state.params.nn, state.params.cluster_id, state.params.window, state.window_size, state.params.radius2, state.min_pts);
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.cuda_find_neighbors);
 

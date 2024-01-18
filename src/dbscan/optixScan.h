@@ -8,7 +8,7 @@
 // #define DATA_N  1e8
 // #endif
 
-#define MODE 0
+#define MODE 1
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -16,6 +16,8 @@ typedef double3 DATA_TYPE_3;
 struct Params {
     // OptixTraversableHandle  pre_handle;
     OptixTraversableHandle  handle;
+    OptixTraversableHandle  out_stride_handle;
+    OptixTraversableHandle  in_stride_handle;
     
     float                   tmin;
     float                   tmax;
@@ -29,6 +31,8 @@ struct Params {
     int*                    nn; // number of neighbors
     int                     operation;
     int                     window_size;
+    int                     stride_left;
+    int                     stride_right;
     // DATA_TYPE_3*            ex_cores;
     // DATA_TYPE_3*            neo_cores;
     // DATA_TYPE_3*            c_out;

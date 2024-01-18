@@ -61,6 +61,8 @@ struct ScanState
     CUdeviceptr                     d_params;
     OptixDeviceContext              context                   = nullptr;
     // OptixTraversableHandle          pre_gas_handle;
+    OptixTraversableHandle          out_stride_gas_handle;
+    OptixTraversableHandle          in_stride_gas_handle;
     OptixTraversableHandle          gas_handle;
     CUdeviceptr                     d_gas_output_buffer       = 0;
     OptixBuildInput                 vertex_input              = {};

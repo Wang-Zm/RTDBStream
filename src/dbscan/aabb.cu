@@ -187,10 +187,10 @@ __global__ void find_cores_t(int* label,
 	if (threadIdx.x == blockDim.x - 1) right = window_size; // 最后一个线程少一些
 	for (int i = left; i < right; i++) {
 		if (nn[i] >= min_pts) {
-      label[i] = 0;
-    } else {
-      label[i] = 2; // 初始化为 noise
-    }
+      		label[i] = 0;
+		} else {
+      		label[i] = 2; // 初始化为 noise
+    	}
 	}
 }
 
@@ -198,14 +198,14 @@ extern "C" void find_cores(int* label,
                            int* nn,
                            int window_size,
                            int min_pts) {
-  unsigned threadsPerBlock = 64;
-  unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
-  find_cores_t <<<numOfBlocks, threadsPerBlock>>> (
-    label,
-    nn,
-    window_size,
-    min_pts
-  );                        
+	unsigned threadsPerBlock = 64;
+	unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
+	find_cores_t <<<numOfBlocks, threadsPerBlock>>> (
+		label,
+		nn,
+		window_size,
+		min_pts
+	);                        
 }
 
 __global__ void union_t(int* tmp_cluster_id, int* cluster_id, int* label, int window_size) {
@@ -236,7 +236,7 @@ extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, 
   );                        
 }
 
-__global__ void find_neighbors_t(int* label, int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts) {
+__global__ void find_neighbors_t(int* label, int* nn, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts) {
 	int left = (window_size / blockDim.x) * threadIdx.x;
 	int right = left + window_size / blockDim.x;
 	if (threadIdx.x == blockDim.x - 1) right = window_size;
@@ -249,30 +249,37 @@ __global__ void find_neighbors_t(int* label, int* nn, DATA_TYPE_3* window, int w
 				atomicAdd(nn + i, 1);
 				atomicAdd(nn + j, 1);
 			}
-			// if (nn[i] >= min_pts) {
-			// 	label[i] = 0; // core
-			// 	break; // ! 不能在这停，停下之后后面的邻居无法识别到
-			// }
 		}
 		if (nn[i] >= min_pts) {
 			label[i] = 0;	// core
 		} else {
 			label[i] = 2;	// noise by default
 		}
+		// cluster_id[i] = i;	// set to itself // TODO: 暂时不加到其中
 	}
 }
 
-extern "C" void find_neighbors(int* label, int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts) {
+extern "C" void find_neighbors(int* label, int* nn, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts) {
 	unsigned threadsPerBlock = 64;
 	unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
 	find_neighbors_t <<<numOfBlocks, threadsPerBlock>>> (
 		label,
 		nn,
+		cluster_id,
 		window,
 		window_size,
 		radius2,
 		min_pts
 	);  
+}
+
+__global__ void init_cluster_id_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
+	int left = (window_size / blockDim.x) * threadIdx.x;
+	int right = left + window_size / blockDim.x;
+	if (threadIdx.x == blockDim.x - 1) right = window_size;
+	for (int i = left; i < right; i++) {
+		cluster_id[i] = i;
+	}
 }
 
 // 一开始 cluster 都是自身，这里设置自己
@@ -282,14 +289,12 @@ __global__ void set_cluster_id_t(int* label, int* cluster_id, DATA_TYPE_3* windo
 	if (threadIdx.x == blockDim.x - 1) right = window_size;
 	for (int i = left; i < right; i++) {
 		DATA_TYPE_3 p = window[i];
-		for (int j = i + 1; i < window_size; i++) {
+		if (label[i] != 0) continue;
+		for (int j = 0; i < window_size; i++) {
 			DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
 			DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
 			if (d < radius2) {
-				// TODO: 可能需要原子操作
-				if (i < cluster_id[j]) {
-					cluster_id[j] = i;
-				}
+				atomicMin(cluster_id + j, i); // 计算 cluster[j] 与 i 的最小值，存放到 cluster[j] 中
 			}
 		}
 	}
@@ -298,6 +303,13 @@ __global__ void set_cluster_id_t(int* label, int* cluster_id, DATA_TYPE_3* windo
 extern "C" void set_cluster_id(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
 	unsigned threadsPerBlock = 64;
 	unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
+	init_cluster_id_t <<<numOfBlocks, threadsPerBlock>>> (
+		label,
+		cluster_id,
+		window,
+		window_size,
+		radius2
+	);
 	set_cluster_id_t <<<numOfBlocks, threadsPerBlock>>> (
 		label,
 		cluster_id,
