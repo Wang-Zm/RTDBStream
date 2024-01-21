@@ -4,11 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-// #ifndef DATA_N
-// #define DATA_N  1e8
-// #endif
-
-#define MODE 1
+#define MODE 0
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -29,6 +25,9 @@ struct Params {
     int*                    cluster_id;
     int*                    tmp_cluster_id;
     int*                    nn; // number of neighbors
+    int*                    check_label;
+    int*                    check_cluster_id;
+    int*                    check_nn;
     int                     operation;
     int                     window_size;
     int                     stride_left;
@@ -71,4 +70,9 @@ struct HitGroupData
 {
 };
 
+extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrims, OptixAabb *d_aabb);
+extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts);
+// extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);
+extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
+extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation);
 #endif

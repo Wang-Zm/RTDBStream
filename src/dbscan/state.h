@@ -97,8 +97,13 @@ struct ScanState
     int                             stride_size;
     DATA_TYPE                       radius;
     int                             min_pts;
+    DATA_TYPE_3*                    h_window;
+    int*                            h_nn;
     int*                            h_label;
     int*                            h_cluster_id;
+    int*                            check_h_nn;
+    int*                            check_h_label;
+    int*                            check_h_cluster_id;
 
     unsigned*                       h_ray_hits;
     unsigned*                       h_ray_intersections;
