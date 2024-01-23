@@ -6,44 +6,6 @@ extern "C" {
 __constant__ Params params;
 }
 
-// extern "C" __global__ void __raygen__rg() {
-//     // Lookup our location within the launch grid
-//     const uint3 idx = optixGetLaunchIndex();    
-
-//     // Map our launch idx to a screen location and create a ray from the camera
-//     // location through the screen 
-//     float3 ray_origin, ray_direction;
-//     ray_origin    = { float(params.out[idx.x].x), 
-//                       float(params.out[idx.x].y),
-//                       float(params.out[idx.x].z) };
-//     ray_direction = { 1, 0, 0 };
-
-//     // Trace the ray against our scene hierarchy
-//     unsigned int intersection_test_num = 0;
-//     unsigned int hit_num = 0;
-//     unsigned int ray_id  = idx.x;
-//     optixTrace(
-//             params.handle,
-//             ray_origin,
-//             ray_direction,
-//             params.tmin,                   // Min intersection distance
-//             params.tmax,        // Max intersection distance
-//             0.0f,                   // rayTime -- used for motion blur
-//             OptixVisibilityMask( 255 ), // Specify always visible
-//             OPTIX_RAY_FLAG_NONE,
-//             0,                   // SBT offset   -- See SBT discussion
-//             1,                   // SBT stride   -- See SBT discussion
-//             0,                   // missSBTIndex -- See SBT discussion
-//             intersection_test_num,
-//             hit_num,
-//             ray_id
-//             );
-// #if DEBUG_INFO == 1
-//     atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
-//     atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
-// #endif
-// }
-
 extern "C" __global__ void __raygen__rg() {
     // Lookup our location within the launch grid
     const uint3 idx = optixGetLaunchIndex();    
@@ -114,13 +76,11 @@ extern "C" __global__ void __intersection__cube() {
     DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
     if (sqdist < params.radius2) {
         if (params.operation == 0) {
-            // params.nn[ray_id]--; // 只操作自己，无需原子操作
             atomicSub(params.nn + ray_id, 1);
         } else if (params.operation == 1) {
-            // params.nn[ray_id]++; // 判别是否是 stride_left, stride_right 中间
             atomicAdd(params.nn + ray_id, 1);
             if (ray_id < params.stride_left || ray_id >= params.stride_right) {
-                atomicAdd(params.nn + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
+                atomicAdd(params.nn + params.stride_left + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
             }
         }
     }
@@ -136,13 +96,23 @@ extern "C" __global__ void __anyhit__terminate_ray() {
 extern "C" __global__ void __miss__ms() {
 }
 
+static __forceinline__ __device__ int find_repres(int v, int* cid) {
+    int par = cid[v];
+    if (par != v) {
+        int next, prev = v;
+        while (par > (next = cid[par])) {
+            cid[prev] = next;
+            prev = par;
+            par = next;
+        }
+    }
+    return par;
+}
+
 extern "C" __global__ void __raygen__cluster() {
     // Lookup our location within the launch grid
     const uint3 idx = optixGetLaunchIndex();
-    // if (params.label[idx.x] == 2) return; // TODO: 应该只从 core 或 border 发射光线，但是 border 目前无法识别，
-    if (params.operation == 2) { // 第二次只从 cid[x] = x 的点发射光线
-        if (params.label[idx.x] != 0 || params.cluster_id[idx.x] != idx.x) return;
-    }
+    if (params.label[idx.x] != 0) return; // * 从 core 发射光线 
 
     // Map our launch idx to a screen location and create a ray from the camera location through the screen 
     float3 ray_origin, ray_direction;
@@ -180,74 +150,38 @@ extern "C" __global__ void __raygen__cluster() {
 extern "C" __global__ void __intersection__cluster() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
-    if (params.label[primIdx] != 0) return;
-
-    if (params.operation != 2) {
-        if (params.label[ray_id] == 0) {
-            if (primIdx >= ray_id) return; // 仅在 primIdx < core_id 时进行距离计算，减小距离计算次数
-            #if DEBUG_INFO == 1
-                optixSetPayload_0(optixGetPayload_0() + 1);
-            #endif
-            const DATA_TYPE_3 point    = params.window[primIdx];
-            const DATA_TYPE_3 ray_orig = params.window[ray_id];
-            DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
-            DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-            if (sqdist < params.radius2) {
-                #if DEBUG_INFO == 1
-                    optixSetPayload_1(optixGetPayload_1() + 1);
-                #endif
-                if (ray_id == 2747) {
-                    O[0] = params.window[ray_id].x - params.window[39].x;
-                    O[1] = params.window[ray_id].y - params.window[39].y;
-                    O[2] = params.window[ray_id].z - params.window[39].z;
-                    sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-                    printf("__intersection__cluster, ray_id=2747, primIdx=%d, d=%lf, window[%d]={%lf, %lf, %lf}, window[%d]={%lf, %lf, %lf}\n", 
-                            39, sqdist, 39, params.window[39].x, params.window[39].y, params.window[39].z, 
-                            ray_id, params.window[ray_id].x, params.window[ray_id].y, params.window[ray_id].z);
-                    printf("__intersection__cluster, ray_id=2747, primIdx=%d\n", primIdx);
+    if (params.label[primIdx] == 0 && primIdx > ray_id) return; // 是 core 且 id 靠后，则直接退出 => 减少距离计算次数
+    const DATA_TYPE_3 ray_orig = params.window[ray_id];
+    const DATA_TYPE_3 point    = params.window[primIdx];
+    DATA_TYPE_3 O = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
+    DATA_TYPE sqdist = O.x * O.x + O.y * O.y + O.z * O.z;
+    if (sqdist >= params.radius2) return; // 距离过大
+    if (params.label[primIdx] == 0) {
+        int ray_rep = find_repres(ray_id, params.cluster_id); // TODO: 哪个已经知道？
+        int prim_rep = find_repres(primIdx, params.cluster_id);
+        bool repeat;
+        do { // 设置
+            repeat = false;
+            if (ray_rep != prim_rep) {
+                int ret;
+                if (ray_rep < prim_rep) {
+                    if ((ret = atomicCAS(params.cluster_id + prim_rep, prim_rep, ray_rep)) != prim_rep) {
+                        prim_rep = ret;
+                        repeat = true;
+                    }
+                } else {
+                    if ((ret = atomicCAS(params.cluster_id + ray_rep, ray_rep, prim_rep)) != ray_rep) {
+                        ray_rep = ret;
+                        repeat = true;
+                    }
                 }
-                params.cluster_id[ray_id] = primIdx;
-                optixReportIntersection( 0, 0 );    // 直接停下光线
             }
-        } else {
-            #if DEBUG_INFO == 1
-                optixSetPayload_0(optixGetPayload_0() + 1);
-            #endif
-            const DATA_TYPE_3 point    = params.window[primIdx];
-            const DATA_TYPE_3 ray_orig = params.window[ray_id];
-            DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
-            DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-            if (sqdist < params.radius2) {
-                #if DEBUG_INFO == 1
-                    optixSetPayload_1(optixGetPayload_1() + 1);
-                #endif
-                params.cluster_id[ray_id] = primIdx;
-                params.label[ray_id] = 1;        // set border
-                optixReportIntersection( 0, 0 ); // 直接停下光线
-            }
+        } while (repeat);
+    } else { // border 处暂直接设置 direct parent 即可
+        if (params.cluster_id[primIdx] == primIdx) {
+            atomicCAS(params.cluster_id + primIdx, primIdx, ray_id);
         }
-    } else {
-        if (primIdx <= ray_id || params.cluster_id[primIdx] >= ray_id) return; // 仅在 primIdx > core_id 时进行距离计算，减小距离计算次数
-        #if DEBUG_INFO == 1
-            optixSetPayload_0(optixGetPayload_0() + 1);
-        #endif
-        const DATA_TYPE_3 point    = params.window[primIdx];
-        const DATA_TYPE_3 ray_orig = params.window[ray_id];
-        DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
-        DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-        if (sqdist < params.radius2 && ray_id > params.cluster_id[primIdx]) {
-            #if DEBUG_INFO == 1
-                optixSetPayload_1(optixGetPayload_1() + 1);
-            #endif
-            // if (ray_id == 2747) {
-            //     O[0] = params.window[ray_id].x - params.window[39].x;
-            //     O[1] = params.window[ray_id].y - params.window[39].y;
-            //     O[1] = params.window[ray_id].z - params.window[39].z;
-            //     printf("__intersection__cluster, ray_id=2747, primIdx=%d, d=%lf\n", 39, sqdist);
-            // }
-            printf("ray_id=%d, params.cluster_id[%d]=%d\n", ray_id, primIdx, params.cluster_id[primIdx]);
-            params.cluster_id[ray_id] = params.cluster_id[primIdx];
-            optixReportIntersection( 0, 0 );    // 直接停下光线
-        }
+        // 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
+        params.label[primIdx] = 1; // 设置为 border
     }
 }

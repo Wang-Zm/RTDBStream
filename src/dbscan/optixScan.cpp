@@ -20,6 +20,7 @@
 #include <string>
 #include <unistd.h>
 #include <map>
+#include <queue>
 #include <thread>
 #include <sutil/Camera.h>
 
@@ -205,7 +206,6 @@ void rebuild_gas(ScanState &state) {
                 1, // Number of build inputs
                 &gas_buffer_sizes
                 ));
-    // 和 out stride 与 in stride 在同一个地方构建 BVH tree
     OPTIX_CHECK(optixAccelBuild(
                 state.context,
                 0, // CUDA stream
@@ -588,130 +588,110 @@ void log_common_info(ScanState &state) {
     std::cout << "Radius: " << state.radius << ", Radius2: " << state.params.radius2 << std::endl;
 }
 
-void cluster(ScanState &state) {
-    // * split
-    // 找到 ex-cores 的 R-
-    // 1.从上一个 BVH tree 中查这些点的相邻关系，从每个点发射光线，记录邻居，之后找到集合；R- 集合中暂存放 ex-core 的具体的 index
-    // 2.找到所有的core，记录下来 [暂时忽略这些工程优化]
-    // 3.使用数组存下所有点的邻居关系
-
-    // TODO: 改变 pipeline
-    // TODO: 从所有 ex-cores 发射光线，设置 R_out_f[] 和 M_out_f[]
-    OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.stride_size, 1, 1)); // 找新的邻居
-    CUDA_SYNC_CHECK();
-    // 得到 R_out_f[]，处理后得到每个点属于的 R-
-    // 得到 M_out_f[]，处理后得到每个点属于的 M- 集合
-
-    // TODO: 遍历每个 M- 集合，队列的处理？
-
-
-    // 遍历每个 M- 集合，判别其中点的连通关系；从一个点开始 BFS，标记访问过的 M-(p) 中的点，如果队列已空，从未访问过的 M-(p) 中找点，再次 BFS
-}
-
 int find(int x, int* cid) {
     // printf("x=%d, cid[%d]=%d\n", x, x, cid[x]);
     return cid[x] == x ? x : cid[x] = find(cid[x], cid);
 }
 
-// void unite(int x, int y, ScanState &state) {
-//     int fx = find(x, state), fy = find(y, state);
-//     if (fx < fy) {
-//         state.h_cluster_id[fy] = fx;
-//     }
-// }
-
-bool check(ScanState& state, int window_id) {   // 直接用 cuda 和 rt 的结果进行比较，无需单独实现 cpu 的版本
-    printf("[Step] check\n");
-    // * 运行 cuda 的代码，放到 state.check_h_cluster_id 中
-    CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMemset(state.params.check_nn, 0, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
-    find_neighbors(state.params.check_nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
-    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int));
-    CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(state.check_h_nn, state.params.check_nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+void cluster_with_cpu(ScanState &state) {
+    // 1. 查找所有点的邻居，判别是否是 core，打上 core label
+    int *check_nn = state.check_h_nn; 
+    int *check_label = state.check_h_label;
+    int *check_cluster_id = state.check_h_cluster_id;
+    DATA_TYPE_3 *window = state.h_window;
+    
+    memset(check_nn, 0, state.window_size * sizeof(int));
     for (int i = 0; i < state.window_size; i++) {
-        if (state.h_nn[i] != state.check_h_nn[i]) {
-            printf("Error on window %d: nn[%d] = %d, check_nn[%d] = %d\n", window_id, i, state.h_nn[i], i, state.check_h_nn[i]);
-            return false;
+        check_nn[i]++; // 自己
+        for (int j = i + 1; j < state.window_size; j++) {
+            DATA_TYPE_3 O = { window[i].x - window[j].x, 
+                              window[i].y - window[j].y, 
+                              window[i].z - window[j].z };
+            DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+            if (d < state.params.radius2) {
+                check_nn[i]++;
+                check_nn[j]++;
+            }
         }
     }
-    find_cores(state.params.check_label, state.params.check_nn, state.params.check_cluster_id, state.window_size, state.min_pts);
-    CUDA_SYNC_CHECK();
-    
-    set_cluster_id(state.params.check_nn, state.params.check_label, state.params.check_cluster_id, state.params.window, state.window_size, state.params.radius2, 0);
-    CUDA_SYNC_CHECK();
+    for (int i = 0; i < state.window_size; i++) {
+        if (check_nn[i] >= state.min_pts) check_label[i] = 0;
+        else check_label[i] = 2;
+    }
+
+    // 2. 从一个 core 开始 bfs，设置所有的点是
+    bool *vis = (bool*) malloc(state.window_size * sizeof(bool));
+    memset(vis, false, state.window_size * sizeof(bool));
+    queue<int> q;
+    for (int i = 0; i < state.window_size; i++) {
+        if (vis[i] || check_label[i] != 0) continue; // 对于 border，应该特殊处理：1）不加到 queue 中
+        vis[i] = true;
+        check_cluster_id[i] = i;
+        q.push(i);
+        while (!q.empty()) {
+            DATA_TYPE_3 p = window[q.front()];
+            q.pop();
+            for (int j = 0; j < state.window_size; j++) {
+                if (!vis[j]) {
+                    DATA_TYPE_3 O = { p.x - window[j].x, 
+                                      p.y - window[j].y, 
+                                      p.z - window[j].z };
+                    DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+                    if (d < state.params.radius2) {
+                        vis[j] = true;
+                        check_cluster_id[j] = i;
+                        if (check_label[j] == 0) q.push(j);
+                        else check_label[j] = 1; // border
+                    }
+                }
+            }
+        }
+    }
+    free(vis);
+}
+
+bool check(ScanState &state, int window_id) {
+    // 得到 cpu 中的结果
+    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
     state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
     state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    CUDA_CHECK(cudaMemcpy(state.check_h_label, state.params.check_label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(state.check_h_cluster_id, state.params.check_cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    for (int i = 0; i < state.window_size; i++) {
-        if (state.check_h_label[i] == 2) continue;
-        find(i, state.check_h_cluster_id);
-    }
-    printf("first find, state.check_h_cluster_id[500]=%d\n", state.check_h_cluster_id[500]);
-    printf("first find, state.check_h_cluster_id[2747]=%d\n", state.check_h_cluster_id[2747]);
+    state.h_window = (DATA_TYPE_3*) malloc(state.window_size * sizeof(DATA_TYPE_3));
+    CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
+    cluster_with_cpu(state);
+    
+    // 将 gpu 中的结果传回来
+    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
 
-    // 重新向后找 cluster id
-    CUDA_CHECK(cudaMemcpy(state.params.check_cluster_id, state.check_h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
-    set_cluster_id(state.params.check_nn, state.params.check_label, state.params.check_cluster_id, state.params.window, state.window_size, state.params.radius2, 2);
-    CUDA_SYNC_CHECK();
-    CUDA_CHECK(cudaMemcpy(state.check_h_label, state.params.check_label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(state.check_h_cluster_id, state.params.check_cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    for (int i = 0; i < state.window_size; i++) {
-        if (state.check_h_label[i] == 2) continue;
-        find(i, state.check_h_cluster_id);
-    }
-    printf("second find, state.check_h_cluster_id[500]=%d\n", state.check_h_cluster_id[500]);
-    printf("second find, state.check_h_cluster_id[2747]=%d\n", state.check_h_cluster_id[2747]);
-    CUDA_CHECK(cudaFree(state.params.check_nn));
-    CUDA_CHECK(cudaFree(state.params.check_label));
-    CUDA_CHECK(cudaFree(state.params.check_cluster_id));
-
+    int *nn = state.h_nn, *check_nn = state.check_h_nn;
     int *label = state.h_label, *check_label = state.check_h_label;
     int *cid = state.h_cluster_id, *check_cid = state.check_h_cluster_id;
     for (int i = 0; i < state.window_size; i++) {
-        if (label[i] == 0 && label[i] != check_label[i]) {
-            printf("Error on window %d: label[%d] = %d(core), check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
+        if (nn[i] != check_nn[i]) {
+            printf("Error on window %d: nn[%d] = %d, check_nn[%d] = %d\n", 
+                    window_id, i, state.h_nn[i], i, state.check_h_nn[i]);
             return false;
         }
     }
     for (int i = 0; i < state.window_size; i++) {
         if (label[i] != check_label[i]) {
-            printf("Error on window %d: label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
+            printf("Error on window %d: label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", 
+                    window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
             return false;
         }
     }
-
-    state.h_window = (DATA_TYPE_3*) malloc(state.window_size * sizeof(DATA_TYPE_3));
-    CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
     for (int i = 0; i < state.window_size; i++) {
         if (label[i] == 0) {
             if (cid[i] != check_cid[i]) {
-                printf("Error on window %d: cid[%d] = %d, check_cid[%d] = %d; label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", 
-                        window_id, i, cid[i], i, check_cid[i], i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
-                DATA_TYPE_3 O = {state.h_window[i].x - state.h_window[check_cid[i]].x, state.h_window[i].y - state.h_window[check_cid[i]].y, state.h_window[i].z - state.h_window[check_cid[i]].z};
-				DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-                printf("Distance between point[%d] and point[%d=check_cid[%d]]: %lf, radius2: %lf\n", i, check_cid[i], i, d, state.params.radius2);
-                printf("Error on window %d: cid[%d] = %d, check_cid[%d] = %d\n", 
-                        window_id, 500, cid[500], 500, check_cid[500]);
-                
-                O = {state.h_window[2747].x - state.h_window[35].x,
-                     state.h_window[2747].y - state.h_window[35].y,
-                     state.h_window[2747].z - state.h_window[35].z};
-                d = O.x * O.x + O.y * O.y + O.z * O.z;
-                printf("Distance between point[%d] and point[%d]: %lf, radius2: %lf\n", 2747, 35, d, state.params.radius2);
-                O = {state.h_window[2747].x - state.h_window[500].x,
-                     state.h_window[2747].y - state.h_window[500].y,
-                     state.h_window[2747].z - state.h_window[500].z};
-                d = O.x * O.x + O.y * O.y + O.z * O.z;
-                printf("Distance between point[%d] and point[%d]: %lf, radius2: %lf\n", 2747, 500, d, state.params.radius2);
+                printf("Error on window %d: cid[%d] = %d, check_cid[%d] = %d; "
+                       "label[%d] = %d, check_label[%d] = %d; "
+                       "nn[%d] = %d, check_nn[%d] = %d\n", 
+                        window_id, i, cid[i], i, check_cid[i], 
+                        i, label[i], i, check_label[i], 
+                        i, nn[i], i, check_nn[i]);
                 return false;
             }
         } else if (label[i] == 1) {
-            // 判断 cid[i] 对应的 cluster 中是否有 window[i] 的邻居
             DATA_TYPE_3 p = state.h_window[i];
             bool is_correct = false;
             for (int j = 0; j < state.window_size; j++) {
@@ -725,18 +705,18 @@ bool check(ScanState& state, int window_id) {   // 直接用 cuda 和 rt 的结�
                     }
                 }
             }
-            if (!is_correct) {
-                // border 的 label 错误，打印问题
-                printf("Error on window %d: cid[%d] = %d, but border[%d] doesn't have a core belonging to cluster %d\n", window_id, i, cid[i], i, cid[i]);
+            if (!is_correct) { // border 的 label 错误，打印问题
+                printf("Error on window %d: cid[%d] = %d, but border[%d] doesn't have a core belonging to cluster %d\n", 
+                        window_id, i, cid[i], i, cid[i]);
                 return false;
             }
         }
     }
     free(state.h_window);
-    free(state.h_nn);
     free(state.check_h_nn);
     free(state.check_h_label);
     free(state.check_h_cluster_id);
+    free(state.h_nn);
     return true;
 }
 
@@ -756,7 +736,6 @@ void search(ScanState &state) {
     make_gas(state);
     printf("[Step] Initialize the first window - build BVH tree...\n");
     CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
-    // 无需是设置最新的问题
     find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
     CUDA_SYNC_CHECK();
     printf("[Step] Initialize the first window - get NN...\n");
@@ -769,7 +748,6 @@ void search(ScanState &state) {
         timer.startTimer(&timer.total);
         
         state.params.out = state.params.window + update_pos * state.stride_size;
-#if MODE == 0 // * use RT
         timer.startTimer(&timer.out_stride_bvh);
         rebuild_gas_stride(state, update_pos, state.out_stride_gas_handle);
         timer.stopTimer(&timer.out_stride_bvh);
@@ -778,7 +756,6 @@ void search(ScanState &state) {
         state.params.out_stride_handle = state.out_stride_gas_handle;
         state.params.stride_left = update_pos * state.stride_size;
         state.params.stride_right = state.params.stride_left + state.stride_size;
-        CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
@@ -786,90 +763,41 @@ void search(ScanState &state) {
 
         timer.startTimer(&timer.in_stride_bvh);
         CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
         rebuild_gas_stride(state, update_pos, state.in_stride_gas_handle);
         timer.stopTimer(&timer.in_stride_bvh);
         timer.startTimer(&timer.in_stride_ray);
         state.params.operation = 1; // nn++
         state.params.in_stride_handle = state.in_stride_gas_handle;
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1)); // TODO: 仅这两次会操作 nn 数量
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.in_stride_ray);
 
-        // * set labels and initialize cluster_id
         timer.startTimer(&timer.find_cores);
         find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts);
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.find_cores);
-        // printf("    [Step] find cores\n");
 
         rebuild_gas(state);
         state.params.handle = state.gas_handle;
 
-
         timer.startTimer(&timer.set_cluster_id);
-        // * 第一次 find
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1)); // TODO: 可能未识别出邻居是 core？但是 core 的身份并未有问题
-        CUDA_SYNC_CHECK();
-        CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-        for (int i = 0; i < state.window_size; i++) {
-            if (state.h_label[i] == 2) continue;
-            find(i, state.h_cluster_id);
-        }
-        CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // 传回去
-        printf("first find, state.h_cluster_id[500]=%d\n", state.h_cluster_id[500]);
-        printf("first find, state.h_cluster_id[1869]=%d\n", state.h_cluster_id[1869]);
-        printf("first find, state.h_cluster_id[2747]=%d\n", state.h_cluster_id[2747]);
-
-        // * 第二次 find
-        state.params.operation = 2; // check cid[i] == i 的点
-        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1)); // TODO: 可能未识别出邻居是 core？但是 core 的身份并未有问题
+        // 从 core 发射光线：1）只与小的 core 进行相交测试，若遇到 core，则向 idx 小的 core 聚类 2）若遇到 border，且 border 的 cid 已经设置过，则直接跳过；否则使用原子操作设置该 border
+        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_cluster_id);
-        // printf("    [Step] set cluster_id\n");
 
-#else // * use CUDA
-        // 使用 cuda 暴搜替换：1）所有点的邻居个数，确定 core 2）再扫一遍，找 border
-        timer.startTimer(&timer.cuda_find_neighbors);
-        // update window
-        CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-        // reset nn
-        CUDA_CHECK(cudaMemset(state.params.nn, 0, state.stride_size * sizeof(int)));
-        find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
-        CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.cuda_find_neighbors);
-
-        timer.startTimer(&timer.cuda_set_clusters);
-        set_cluster_id(state.params.nn, state.params.label, state.params.cluster_id, state.params.window, state.window_size, state.params.radius2, state.min_pts);
-        CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.cuda_set_clusters);
-#endif
-
-        // 暂时实现并行的 union-find，不进行路径压缩而是直接设置当前值
         timer.startTimer(&timer.union_cluster_id);
-        // * parallel union-find
-        // CUDA_CHECK(cudaMemcpy(state.params.tmp_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToDevice));
-        // union_cluster(state.params.tmp_cluster_id, state.params.cluster_id, state.params.label, state.window_size); // ! 这里停了下来，可能是并行引入了循环问题
-        // CUDA_SYNC_CHECK();
         // * serial union-find
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-        printf("second find, state.h_cluster_id[500]=%d\n", state.h_cluster_id[500]);
-        printf("second find, state.h_cluster_id[2747]=%d\n", state.h_cluster_id[2747]);
         for (int i = 0; i < state.window_size; i++) {
             if (state.h_label[i] == 2) continue;
             find(i, state.h_cluster_id);
         }
         timer.stopTimer(&timer.union_cluster_id);
-        printf("    [Step] union clusters\n");
-
-        // 传回 cluster
-        // timer.startTimer(&timer.copy_cluster_d2h);
-        // CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-        // timer.startTimer(&timer.copy_cluster_d2h);
 
         stride_num++;
         remaining_data_num  -= state.stride_size;
