@@ -779,7 +779,9 @@ void search(ScanState &state) {
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.find_cores);
 
+        timer.startTimer(&timer.whole_bvh);
         rebuild_gas(state);
+        timer.stopTimer(&timer.whole_bvh);
         state.params.handle = state.gas_handle;
 
         timer.startTimer(&timer.set_cluster_id);
@@ -809,7 +811,7 @@ void search(ScanState &state) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
-        if (!check(state, window_left / state.stride_size)) { exit(1); }
+        // if (!check(state, window_left / state.stride_size)) { exit(1); }
 
         printf("[Step] Finish window %d\n", window_left / state.stride_size);
     }

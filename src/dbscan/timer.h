@@ -14,6 +14,7 @@ class Timer{
   double rebuild_bvh;
   double in_stride;
   double find_cores;
+  double whole_bvh;
   double set_cluster_id;
   double union_cluster_id;
   double copy_cluster_d2h;
@@ -41,6 +42,7 @@ class Timer{
     rebuild_bvh = 0;
     in_stride = 0;
     find_cores = 0;
+    whole_bvh = 0;
     set_cluster_id = 0;
     union_cluster_id = 0;
     copy_cluster_d2h = 0;
@@ -107,6 +109,7 @@ class Timer{
     cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
 
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
+    cout << "[Time] whole_bvh: " << whole_bvh / query_num << " ms" << endl;
     cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
     // cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
