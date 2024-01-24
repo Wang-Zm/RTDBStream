@@ -75,5 +75,5 @@ extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrim
 extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts);
 // extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);
 extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
-extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation);
+extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2);
 #endif

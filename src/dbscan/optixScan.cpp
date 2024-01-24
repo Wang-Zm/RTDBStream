@@ -192,6 +192,7 @@ void make_gas(ScanState &state) {
 void rebuild_gas(ScanState &state) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    // 改为 OPTIX_BUILD_FLAG_PREFER_FAST_TRACE 时会有性能提升但提升不多
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
@@ -658,12 +659,47 @@ void cluster_with_cpu(ScanState &state) {
     timer.stopTimer(&timer.cpu_cluter_total);
 }
 
+void cluster_with_cuda(ScanState &state) {
+    CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMemset(state.params.check_nn, 0, state.window_size * sizeof(int)));
+
+    timer.startTimer(&timer.cuda_cluter_total);
+
+    timer.startTimer(&timer.cuda_find_neighbors);
+    find_neighbors(state.params.check_nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
+    CUDA_SYNC_CHECK();
+    find_cores(state.params.check_label, state.params.check_nn, state.params.check_cluster_id, state.window_size, state.min_pts);
+    CUDA_SYNC_CHECK();
+    timer.stopTimer(&timer.cuda_find_neighbors);
+
+    timer.startTimer(&timer.cuda_set_clusters);
+    set_cluster_id(state.params.check_nn, state.params.check_label, state.params.check_cluster_id, state.params.window, state.window_size, state.params.radius2);
+    CUDA_SYNC_CHECK();
+    timer.stopTimer(&timer.cuda_set_clusters);
+
+    CUDA_CHECK(cudaMemcpy(state.check_h_nn, state.params.check_nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(state.check_h_label, state.params.check_label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(state.check_h_cluster_id, state.params.check_cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+    for (int i = 0; i < state.window_size; i++) {
+        if (state.check_h_label[i] == 2) continue;
+        find(i, state.check_h_cluster_id);
+    }
+    timer.stopTimer(&timer.cuda_cluter_total);
+
+    CUDA_CHECK(cudaFree(state.params.check_nn));
+    CUDA_CHECK(cudaFree(state.params.check_label));
+    CUDA_CHECK(cudaFree(state.params.check_cluster_id));
+}
+
 bool check(ScanState &state, int window_id) {
     // 得到 cpu 中的结果
     state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
     state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
     state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    cluster_with_cpu(state);
+    // cluster_with_cpu(state);
+    cluster_with_cuda(state);
     
     // 将 gpu 中的结果传回来
     state.h_nn = (int*) malloc(state.window_size * sizeof(int));

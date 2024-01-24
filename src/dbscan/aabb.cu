@@ -158,57 +158,156 @@ extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DA
 	);  
 }
 
-__global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation) {
+// __global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation) {
+// 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
+//   	if (i >= window_size) return;
+// 	DATA_TYPE_3 p = window[i];
+//  	if (operation != 2) {
+// 		if (label[i] == 0) { // 只和前面的 core 进行比较
+// 			for (int j = 0; j < i; j++) {
+// 				if (label[j] == 0) {
+// 					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
+// 					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+// 					if (d < radius2) {
+// 						if (i == 2747) {
+// 							printf("set_cluster_id_op_t, i=%d, j=%d, d=%lf, window[%d]={%lf, %lf, %lf}, window[%d]={%lf, %lf, %lf}\n", i, j, d, j, window[j].x, window[j].y, window[j].z, i, window[i].x, window[i].y, window[i].z);
+// 						}
+// 						cluster_id[i] = j;
+// 						break;
+// 					}
+// 				}
+// 			}
+// 		} else {			// border，设置 cid 为找到的第一个 core
+// 			for (int j = 0; j < window_size; j++) {
+// 				if (j == i) continue;
+// 				if (label[j] == 0) {
+// 					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
+// 					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+// 					if (d < radius2) {
+// 						cluster_id[i] = j;
+// 						label[i] = 1;
+// 						break;
+// 					}
+// 				}
+// 			}
+// 		}
+// 	} else {
+// 		if (label[i] == 0 && cluster_id[i] == i) { // 只和后面的 core 进行比较
+// 			for (int j = i + 1; j < window_size; j++) {
+// 				if (label[j] == 0 && i > cluster_id[j]) {
+// 					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
+// 					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+// 					if (d < radius2) {
+// 						cluster_id[i] = cluster_id[j];
+// 						printf("i=%d, params.check_cluster_id[%d]=%d\n", i, j, cluster_id[j]);
+// 						break;
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
+// }
+
+static __forceinline__ __device__ int find_repres(int v, int* cid) {
+    int par = cid[v];
+    if (par != v) {
+        int next, prev = v;
+        while (par > (next = cid[par])) {
+            cid[prev] = next;
+            prev = par;
+            par = next;
+        }
+    }
+    return par;
+}
+
+__global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
   	if (i >= window_size) return;
+	
+	// if (label[i] != 0) return; // 从 core 开始计算
+	// DATA_TYPE_3 p = window[i];
+	// for (int j = 0; j < window_size; j++) { // 只和 i 前面的点进行测试
+	// 	if (label[j] == 0 && j > i) return;
+		
+	// 	DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
+	// 	DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+	// 	if (d >= radius2) continue;
+	// 	if (label[j] == 0) {
+	// 		int ray_rep = find_repres(i, cluster_id);
+	// 		int prim_rep = find_repres(j, cluster_id);
+	// 		bool repeat;
+	// 		do { // 设置 core
+	// 			repeat = false;
+	// 			if (ray_rep != prim_rep) {
+	// 				int ret;
+	// 				if (ray_rep < prim_rep) {
+	// 					if ((ret = atomicCAS(cluster_id + prim_rep, prim_rep, ray_rep)) != prim_rep) {
+	// 						prim_rep = ret;
+	// 						repeat = true;
+	// 					}
+	// 				} else {
+	// 					if ((ret = atomicCAS(cluster_id + ray_rep, ray_rep, prim_rep)) != ray_rep) {
+	// 						ray_rep = ret;
+	// 						repeat = true;
+	// 					}
+	// 				}
+	// 			}
+	// 		} while (repeat);
+	// 	} else { // border 处暂直接设置 direct parent 即可
+	// 		if (cluster_id[j] == j) {
+	// 			atomicCAS(cluster_id + j, j, i);
+	// 		}
+	// 		// 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
+	// 		label[j] = 1; // 设置为 border
+	// 	}
+	// }
+
 	DATA_TYPE_3 p = window[i];
- 	if (operation != 2) {
-		if (label[i] == 0) { // 只和前面的 core 进行比较
-			for (int j = 0; j < i; j++) {
-				if (label[j] == 0) {
-					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-					if (d < radius2) {
-						if (i == 2747) {
-							printf("set_cluster_id_op_t, i=%d, j=%d, d=%lf, window[%d]={%lf, %lf, %lf}, window[%d]={%lf, %lf, %lf}\n", i, j, d, j, window[j].x, window[j].y, window[j].z, i, window[i].x, window[i].y, window[i].z);
+	if (label[i] == 0) { // 只和前面的 core 进行比较
+		for (int j = 0; j < i; j++) {
+			if (label[j] != 0) continue;
+			DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
+			DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+			if (d >= radius2) continue;
+			int ray_rep = find_repres(i, cluster_id);
+			int prim_rep = find_repres(j, cluster_id);
+			bool repeat;
+			do { // 设置 core
+				repeat = false;
+				if (ray_rep != prim_rep) {
+					int ret;
+					if (ray_rep < prim_rep) {
+						if ((ret = atomicCAS(cluster_id + prim_rep, prim_rep, ray_rep)) != prim_rep) {
+							prim_rep = ret;
+							repeat = true;
 						}
-						cluster_id[i] = j;
-						break;
+					} else {
+						if ((ret = atomicCAS(cluster_id + ray_rep, ray_rep, prim_rep)) != ray_rep) {
+							ray_rep = ret;
+							repeat = true;
+						}
 					}
 				}
-			}
-		} else {			// border，设置 cid 为找到的第一个 core
-			for (int j = 0; j < window_size; j++) {
-				if (j == i) continue;
-				if (label[j] == 0) {
-					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-					if (d < radius2) {
-						cluster_id[i] = j;
-						label[i] = 1;
-						break;
-					}
-				}
-			}
+			} while (repeat);
 		}
-	} else {
-		if (label[i] == 0 && cluster_id[i] == i) { // 只和后面的 core 进行比较
-			for (int j = i + 1; j < window_size; j++) {
-				if (label[j] == 0 && i > cluster_id[j]) {
-					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-					if (d < radius2) {
-						cluster_id[i] = cluster_id[j];
-						printf("i=%d, params.check_cluster_id[%d]=%d\n", i, j, cluster_id[j]);
-						break;
-					}
+	} else {			// border，设置 cid 为找到的第一个 core 的 repres
+		for (int j = 0; j < window_size; j++) {
+			if (j == i) continue;
+			if (label[j] == 0) {
+				DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
+				DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+				if (d < radius2) {
+					cluster_id[i] = find_repres(j, cluster_id);
+					label[i] = 1;
+					break;
 				}
 			}
 		}
 	}
 }
 
-extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation) {
+extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
 	unsigned threadsPerBlock = 64;
 	unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
 	set_cluster_id_op_t <<<numOfBlocks, threadsPerBlock>>> (
@@ -216,8 +315,7 @@ extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3
 		cluster_id,
 		window,
 		window_size,
-		radius2,
-		operation
+		radius2
 	);
 }
 

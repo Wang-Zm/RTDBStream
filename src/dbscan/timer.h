@@ -30,6 +30,7 @@ class Timer{
 
   double total;
   double cpu_cluter_total;
+  double cuda_cluter_total;
 
   Timer() {
     struct timeval t1;                           
@@ -60,6 +61,7 @@ class Timer{
 
     total = 0;
     cpu_cluter_total = 0;
+    cuda_cluter_total = 0;
   }
   
   // void commonGetStartTime(int timeId) {
@@ -119,12 +121,13 @@ class Timer{
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
     // cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
     
+    cout << "[Time] total: " << total / query_num << " ms" << endl;
+    
+    cout << "[Time] cpu_cluter_total: " << cpu_cluter_total / query_num << " ms" << endl;
+
+    cout << "[Time] cuda_cluter_total: " << cuda_cluter_total / query_num << " ms" << endl;
     cout << "[Time] cuda_find_neighbors: " << cuda_find_neighbors / query_num << " ms" << endl;
     cout << "[Time] cuda_set_clusters: " << cuda_set_clusters / query_num << " ms" << endl;
-    
-    cout << "[Time] total: " << total / query_num << " ms" << endl;
-    cout << "[Time] cpu_cluter_total: " << cpu_cluter_total / query_num << " ms" << endl;
-    // cout << "[Time] total: " << copy_queries_h2d + search_neighbors + copy_results_d2h << " ms" << endl;
 
     cout << "##############################" << endl;
     cout << endl;
