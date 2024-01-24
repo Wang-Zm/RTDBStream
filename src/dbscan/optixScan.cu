@@ -151,16 +151,22 @@ extern "C" __global__ void __intersection__cluster() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
     if (params.label[primIdx] == 0 && primIdx > ray_id) return; // 是 core 且 id 靠后，则直接退出 => 减少距离计算次数
+    
+    // 先判别是否已经属于同一个 cluster，prune，减少距离计算
+    int ray_rep = find_repres(ray_id, params.cluster_id); // TODO: 哪个已经知道？
+    int prim_rep = find_repres(primIdx, params.cluster_id);
+    if (ray_rep == prim_rep) return;
+
     const DATA_TYPE_3 ray_orig = params.window[ray_id];
     const DATA_TYPE_3 point    = params.window[primIdx];
     DATA_TYPE_3 O = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
     DATA_TYPE sqdist = O.x * O.x + O.y * O.y + O.z * O.z;
-    if (sqdist >= params.radius2) return; // 距离过大
+    if (sqdist >= params.radius2) return;
     if (params.label[primIdx] == 0) {
-        int ray_rep = find_repres(ray_id, params.cluster_id); // TODO: 哪个已经知道？
-        int prim_rep = find_repres(primIdx, params.cluster_id);
+        ray_rep = find_repres(ray_id, params.cluster_id);
+        prim_rep = find_repres(primIdx, params.cluster_id);
         bool repeat;
-        do { // 设置
+        do { // 设置 core
             repeat = false;
             if (ray_rep != prim_rep) {
                 int ret;

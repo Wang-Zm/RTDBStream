@@ -15,6 +15,7 @@ class Timer{
   double in_stride;
   double find_cores;
   double whole_bvh;
+  double early_cluster;
   double set_cluster_id;
   double union_cluster_id;
   double copy_cluster_d2h;
@@ -28,6 +29,7 @@ class Timer{
   double cuda_set_clusters;
 
   double total;
+  double cpu_cluter_total;
 
   Timer() {
     struct timeval t1;                           
@@ -43,6 +45,7 @@ class Timer{
     in_stride = 0;
     find_cores = 0;
     whole_bvh = 0;
+    early_cluster = 0;
     set_cluster_id = 0;
     union_cluster_id = 0;
     copy_cluster_d2h = 0;
@@ -56,6 +59,7 @@ class Timer{
     cuda_set_clusters = 0;
 
     total = 0;
+    cpu_cluter_total = 0;
   }
   
   // void commonGetStartTime(int timeId) {
@@ -110,6 +114,7 @@ class Timer{
 
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
     cout << "[Time] whole_bvh: " << whole_bvh / query_num << " ms" << endl;
+    cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
     cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
     // cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
@@ -118,6 +123,7 @@ class Timer{
     cout << "[Time] cuda_set_clusters: " << cuda_set_clusters / query_num << " ms" << endl;
     
     cout << "[Time] total: " << total / query_num << " ms" << endl;
+    cout << "[Time] cpu_cluter_total: " << cpu_cluter_total / query_num << " ms" << endl;
     // cout << "[Time] total: " << copy_queries_h2d + search_neighbors + copy_results_d2h << " ms" << endl;
 
     cout << "##############################" << endl;

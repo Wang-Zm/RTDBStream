@@ -11,50 +11,6 @@
 
 using namespace std;
 
-// class FixQueue {
-// public:
-//     int         arr[MK];
-//     int         start;
-//     int         num;
-
-//     FixQueue() {
-//         start = 0;
-//         num = 0;
-//     }
-
-//     void enqueue(int val) {
-//         arr[start] = val;
-//         if ((++start) == MK) {
-//             start = 0;
-//         }
-//         num++;
-//     }
-
-//     void copy(double3* dsc, int* dsc_idx, double3* h_current_window) {
-//         int _start = (start - 1 + MK) % MK;
-//         int _num   = num;
-//         while (_num > 0) {
-//             *dsc = h_current_window[arr[_start]];
-//             *dsc_idx = arr[_start];
-//             dsc++;
-//             dsc_idx++;
-//             _start = (_start - 1 + MK) % MK;
-//             _num--;
-//         }
-//     }
-
-//     void copy(double3* dsc, double3* h_current_window) {
-//         int _start = (start - 1 + MK) % MK;
-//         int _num   = num;
-//         while (_num > 0) {
-//             *dsc = h_current_window[arr[_start]];
-//             dsc++;
-//             _start = (_start - 1 + MK) % MK;
-//             _num--;
-//         }
-//     }
-// };
-
 struct ScanState
 {
     Params                          params;
@@ -90,8 +46,8 @@ struct ScanState
     std::string                     data_file;
     int                             data_num;
     DATA_TYPE_3*                    h_data;
-    DATA_TYPE*                      max_value;
-    DATA_TYPE*                      min_value;
+    vector<DATA_TYPE>               max_value;
+    vector<DATA_TYPE>               min_value;
     // int                             dim;
     int                             window_size;
     int                             stride_size;
@@ -107,6 +63,10 @@ struct ScanState
 
     unsigned*                       h_ray_hits;
     unsigned*                       h_ray_intersections;
+
+    unordered_map<int, int>         cell_point_num;
+    DATA_TYPE                       cell_length;
+    vector<int>                     cell_count;
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);

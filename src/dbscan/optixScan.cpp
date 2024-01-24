@@ -9,9 +9,7 @@
 
 #include <sutil/Exception.h>
 #include <sutil/sutil.h>
-
-#include "state.h"
-#include "timer.h"
+#include <sutil/Camera.h>
 
 #include <array>
 #include <bitset>
@@ -22,14 +20,16 @@
 #include <map>
 #include <queue>
 #include <thread>
-#include <sutil/Camera.h>
+#include <fstream>
 
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
 #include <thrust/sequence.h>
 #include <thrust/gather.h>
 
-#include <fstream>
+#include "state.h"
+#include "timer.h"
+
 using namespace std;
 
 template <typename T>
@@ -554,7 +554,10 @@ void initialize_params(ScanState &state) {
     size_t start;
     start_gpu_mem(&start);
 
-    // state.params.handle = state.gas_handle; // 已在 search 方法中写好
+    state.cell_length   = state.radius / sqrt(3);
+    for (int i = 0; i < 3; i++) {
+        state.cell_count.push_back(int((state.max_value[i] - state.min_value[i] + state.cell_length) / state.cell_length));
+    }
     state.params.radius2= state.radius * state.radius;
     state.params.tmin   = 0.0f;
     state.params.tmax   = FLT_MIN;
@@ -566,6 +569,7 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(&state.params.window, state.window_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_params), sizeof(Params)));
     state.h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
+    state.h_label = (int*) malloc(state.window_size * sizeof(int));
 
 #if DEBUG_INFO == 1
     CUDA_CHECK(cudaMalloc(&state.params.ray_intersections, state.query_num * sizeof(unsigned)));
@@ -586,10 +590,12 @@ void log_common_info(ScanState &state) {
     std::cout << "Data num: " << state.data_num << std::endl;
     std::cout << "Window size: " << state.window_size << ", Stride size:" << state.stride_size << ", K:" << state.min_pts << std::endl;
     std::cout << "Radius: " << state.radius << ", Radius2: " << state.params.radius2 << std::endl;
+    std::cout << "Cell length: " << state.cell_length << std::endl;
+    for (int i = 0; i < 3; i++) std::cout << "Cell count: " << state.cell_count[i] << ", ";
+    std::cout << std::endl;
 }
 
 int find(int x, int* cid) {
-    // printf("x=%d, cid[%d]=%d\n", x, x, cid[x]);
     return cid[x] == x ? x : cid[x] = find(cid[x], cid);
 }
 
@@ -600,6 +606,7 @@ void cluster_with_cpu(ScanState &state) {
     int *check_cluster_id = state.check_h_cluster_id;
     DATA_TYPE_3 *window = state.h_window;
     
+    timer.startTimer(&timer.cpu_cluter_total);
     memset(check_nn, 0, state.window_size * sizeof(int));
     for (int i = 0; i < state.window_size; i++) {
         check_nn[i]++; // 自己
@@ -619,7 +626,7 @@ void cluster_with_cpu(ScanState &state) {
         else check_label[i] = 2;
     }
 
-    // 2. 从一个 core 开始 bfs，设置所有的点是
+    // 2. 从一个 core 开始 bfs，设置所有的点是该 core_id
     bool *vis = (bool*) malloc(state.window_size * sizeof(bool));
     memset(vis, false, state.window_size * sizeof(bool));
     queue<int> q;
@@ -648,6 +655,7 @@ void cluster_with_cpu(ScanState &state) {
         }
     }
     free(vis);
+    timer.stopTimer(&timer.cpu_cluter_total);
 }
 
 bool check(ScanState &state, int window_id) {
@@ -655,8 +663,6 @@ bool check(ScanState &state, int window_id) {
     state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
     state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
     state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    state.h_window = (DATA_TYPE_3*) malloc(state.window_size * sizeof(DATA_TYPE_3));
-    CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
     cluster_with_cpu(state);
     
     // 将 gpu 中的结果传回来
@@ -712,12 +718,24 @@ bool check(ScanState &state, int window_id) {
             }
         }
     }
-    free(state.h_window);
     free(state.check_h_nn);
     free(state.check_h_label);
     free(state.check_h_cluster_id);
     free(state.h_nn);
     return true;
+}
+
+int get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
+    int id = 0;
+// #if DIMENSION == 1
+//     id = (vertices[i].x - state.min_value[0]) / state.cell_length;
+// #elif DIMENSION == 3
+    int dim_id_x = (data[i].x - min_value[0]) / cell_length;
+    int dim_id_y = (data[i].y - min_value[1]) / cell_length;
+    int dim_id_z = (data[i].z - min_value[2]) / cell_length;
+    id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
+// #endif
+    return id;
 }
 
 void search(ScanState &state) {
@@ -739,10 +757,14 @@ void search(ScanState &state) {
     find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
     CUDA_SYNC_CHECK();
     printf("[Step] Initialize the first window - get NN...\n");
+    for (int i = 0; i < state.window_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]++;
+    }
+    printf("[Step] Initialize the first window - set grid...\n");
 
     // * Start sliding
-    state.h_label = (int*) malloc(state.window_size * sizeof(int));
-    CUDA_CHECK(cudaMalloc(&state.params.tmp_cluster_id, state.window_size * sizeof(int)));
+    state.h_window = (DATA_TYPE_3*) malloc(state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
@@ -784,6 +806,42 @@ void search(ScanState &state) {
         timer.stopTimer(&timer.whole_bvh);
         state.params.handle = state.gas_handle;
 
+        // 创建 hashtable，长度为 > window_size 的 2 的倍数；在计算点的 cell_idx 的过程中将 cell_id 插入到其中，在核方法中调用 insert 
+        // 在 RT 程序中，可计算点所属的 cell_id，进而直接得到其中的点数，如果 >= min_pts，说明是 dense core？
+        // 之后是否还需要涉及 cell 中点的个数的记录？初始归类后后续无需再考虑 cid 问题了
+        // 1）在计算点的 cell_idx 的过程中将 cell_id 插入到其中，在核方法中调用 insert
+        // 2）再启动 cuda 核方法来初始化点的 cid
+#ifdef OPTIMIZATION_GRID
+        timer.startTimer(&timer.early_cluster);
+        for (int i = window_left; i < window_left + state.stride_size; i++) {
+            int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // get_cell_id 方法需要改造一下
+            state.cell_point_num.erase(cell_id);
+        }
+        for (int i = window_right; i < window_right + state.stride_size; i++) {
+            int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+            state.cell_point_num[cell_id]++;
+        }
+        CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
+        unordered_map<int, int> cell_repres;
+        int dense_core_num = 0;
+        for (int i = 0; i < state.window_size; i++) {
+            int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
+            if (state.cell_point_num[cell_id] >= state.min_pts) {
+                dense_core_num++;
+                if (cell_repres.count(cell_id)) {
+                    state.h_cluster_id[i] = cell_repres[cell_id];
+                } else {
+                    state.h_cluster_id[i] = i;
+                    cell_repres[cell_id] = i;
+                }
+            } else {
+                state.h_cluster_id[i] = i;
+            }
+        }
+        CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
+        timer.stopTimer(&timer.early_cluster);
+#endif
+
         timer.startTimer(&timer.set_cluster_id);
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         // 从 core 发射光线：1）只与小的 core 进行相交测试，若遇到 core，则向 idx 小的 core 聚类 2）若遇到 border，且 border 的 cid 已经设置过，则直接跳过；否则使用原子操作设置该 border
@@ -811,7 +869,7 @@ void search(ScanState &state) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
-        // if (!check(state, window_left / state.stride_size)) { exit(1); }
+        if (!check(state, window_left / state.stride_size)) { exit(1); }
 
         printf("[Step] Finish window %d\n", window_left / state.stride_size);
     }
@@ -870,6 +928,7 @@ void cleanup(ScanState &state) {
     free(state.h_data);
     free(state.h_label);
     free(state.h_cluster_id);
+    free(state.h_window);
 
     // free device memory
     CUDA_CHECK(cudaFree(reinterpret_cast<void *>(state.sbt.raygenRecord)));

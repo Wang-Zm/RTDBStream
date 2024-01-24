@@ -43,102 +43,6 @@ extern "C" void kGenAABB(DATA_TYPE_3* points, DATA_TYPE width, unsigned numPrims
     );
 }
 
-// __global__ void search_t(DIST_TYPE** dist, 
-//                          DATA_TYPE** points,
-//                          DATA_TYPE** queries,
-//                          int query_num, 
-//                          int data_num, 
-//                          int bvh_num,
-//                          double radius2) {
-//   int left = (data_num / blockDim.x) * threadIdx.x;
-//   int right = left + data_num / blockDim.x;
-//   if (threadIdx.x == blockDim.x - 1) right = data_num; // 最后一个线程多一些
-//   int unsigned_len = (bvh_num + 32 - 1) / 32;
-//   for (int i = left; i < right; i++) {
-//     for (int bvh_id = 0; bvh_id < bvh_num; bvh_id++) {
-//       const DATA_TYPE point[3]    = { points[i][bvh_id * 3], 
-//                                       points[i][bvh_id * 3 + 1], 
-//                                       points[i][bvh_id * 3 + 2] };
-//       const DATA_TYPE query[3]    = { queries[blockIdx.x][bvh_id * 3],
-//                                       queries[blockIdx.x][bvh_id * 3 + 1],
-//                                       queries[blockIdx.x][bvh_id * 3 + 2] };
-//       const DATA_TYPE O[3]        = { query[0] - point[0], query[1] - point[1], query[2] - point[2] };
-//       const DIST_TYPE sqdist      = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-//       dist[blockIdx.x][i]        += sqdist;
-//       if (dist[blockIdx.x][i] >= radius2) break;
-//     }
-//   }
-// }
-
-// extern "C" void search_with_cuda(DIST_TYPE** dist, 
-//                                  DATA_TYPE** points,
-//                                  DATA_TYPE** queries, 
-//                                  int query_num, 
-//                                  int data_num, 
-//                                  int bvh_num,
-//                                  double radius2) {
-//   // query, data, bvh
-//   unsigned threadsPerBlock = 1024;
-//   unsigned numOfBlocks = query_num;
-
-//   // data_num / threadsPerBlock 是一个thread处理的线程数
-//   search_t <<<numOfBlocks, threadsPerBlock>>> (
-//     dist,
-//     points,
-//     queries,
-//     query_num,
-//     data_num,
-//     bvh_num,
-//     radius2
-//   );
-// }
-
-// __global__ void collect_t(int* label,
-// 						  int* nn,
-// 						  DATA_TYPE_3* window,
-// 						  DATA_TYPE_3* out_stride,
-// 						  int window_size,
-// 						  int out_start,
-// 						  int out_end,
-// 						  DATA_TYPE_3* c_out,
-// 						  DATA_TYPE_3* ex_cores,
-// 						  DATA_TYPE_3* neo_cores,
-// 						  int* c_out_num,
-// 						  int* ex_cores_num,
-// 						  int* neo_cores_num,
-// 						  int min_pts) {
-// 	int left = (window_size / blockDim.x) * threadIdx.x;
-// 	int right = left + window_size / blockDim.x;
-// 	if (threadIdx.x == blockDim.x - 1) right = window_size; // 最后一个线程少一些
-// 	for (int i = left; i < right; i++) {
-// 		if (i >= out_start && i < out_end) {
-// 			if (label[i] == 0) {							// 原来是 core，现在 out
-// 				int idx = atomicAdd(c_out_num, 1);
-// 				c_out[idx] = out_stride[i - out_start]; 	// 记录 out 的部分
-// 				idx = atomicAdd(ex_cores_num, 1);
-// 				ex_cores[idx] = out_stride[i - out_start];
-// 			}
-// 			if (nn[i] > min_pts) {							// 现在是 core
-// 				label[i] = 0;
-// 				int idx = atomicAdd(neo_cores_num, 1);
-// 				neo_cores[idx] = window[i];
-// 			} else {
-// 				label[i] = 2; 								// 现在不是 core，可暂时初始化为 noise
-// 			}
-// 		} else {
-// 			if (nn[i] > min_pts && label[i] != 0) {			// 原来不是现在是
-// 				int idx = atomicAdd(neo_cores_num, 1);
-// 				neo_cores[idx] = window[i];
-// 				label[i] = 0;
-// 			} else if (nn[i] <= min_pts && label[i] == 0) { // 原来是现在不是
-// 				int idx = atomicAdd(c_out_num, 1);
-// 				c_out[idx] = window[i];
-// 				label[i] = 2;								// 将 Wcurr 中 ex-core label 初始化为 noise
-// 			}
-// 		}
-// 	}
-// }
-
 /**
  * 1.收集 c_out, ex_cores, neo_cores
  * 2.label 设置
@@ -237,8 +141,7 @@ __global__ void find_neighbors_t(int* nn, DATA_TYPE_3* window, int window_size, 
 		DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
 		DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
 		if (d < radius2) {
-			atomicAdd(nn + idx, 1); // 暂时就用这种较为低效的方法
-			// atomicAdd(nn + j, 1);
+			atomicAdd(nn + idx, 1); 
 		}
 	}
 }
@@ -254,37 +157,6 @@ extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DA
 		min_pts
 	);  
 }
-
-// __global__ void init_cluster_id_t(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts) {
-// 	int left = (window_size / blockDim.x) * threadIdx.x;
-// 	int right = left + window_size / blockDim.x;
-// 	if (threadIdx.x == blockDim.x - 1) right = window_size;
-// 	for (int i = left; i < right; i++) {
-// 		if (nn[i] >= min_pts) {
-// 			label[i] = 0;	// core
-// 		} else {
-// 			label[i] = 2;	// noise by default
-// 		}
-// 		cluster_id[i] = i;
-// 	}
-// }
-
-// __global__ void set_cluster_id_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
-// 	int left = (window_size / blockDim.x) * threadIdx.x;
-// 	int right = left + window_size / blockDim.x;
-// 	if (threadIdx.x == blockDim.x - 1) right = window_size;
-// 	for (int i = left; i < right; i++) {
-// 		DATA_TYPE_3 p = window[i];
-// 		if (label[i] != 0) continue;
-// 		for (int j = 0; j < window_size; j++) {
-// 			DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-// 			DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-// 			if (d < radius2) {
-// 				atomicMin(cluster_id + j, i); // 计算 cluster[j] 与 i 的最小值，存放到 cluster[j] 中
-// 			}
-// 		}
-// 	}
-// }
 
 __global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation) {
 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -348,3 +220,27 @@ extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3
 		operation
 	);
 }
+
+// __global__ void update_grid_t(DATA_TYPE_3* data, int data_num, DATA_TYPE cell_width, uint3 grid_d, KeyValue* pHashTable) {
+// 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
+//   	if (i >= data_num) return;
+// 	unsigned cell_idx_x = data[i].x / cell_width;
+// 	unsigned cell_idx_y = data[i].y / cell_width;
+// 	unsigned cell_idx_z = data[i].z / cell_width;
+// 	unsigned cell_id = cell_idx_x * grid_d.y * grid_d.z + cell_idx_y * grid_d.z + cell_idx_z;
+// 	// cell_id 对应的 value + 1
+// 	// 如果 gpu 比较困难，那么找别的东西
+// 	// 需求就是 cell_id 对应的 slot 中的 value 进行原子操作，因此只要找到一个索引即可
+// }
+
+// extern "C" void update_grid(DATA_TYPE_3* data, int data_num, DATA_TYPE cell_width, uint3 grid_d, KeyValue* pHashTable) { // grid_d.x|y|z，cell_width, 
+// 	unsigned threadsPerBlock = 64;
+// 	unsigned numOfBlocks = (data_num + threadsPerBlock - 1) / threadsPerBlock;
+// 	update_grid_t <<<numOfBlocks, threadsPerBlock>>> (
+// 		data,
+// 		data_num,
+// 		cell_width,
+// 		grid_d,
+// 		pHashTable
+// 	);
+// }

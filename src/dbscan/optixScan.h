@@ -5,6 +5,7 @@
 #define THREAD_NUM 80
 
 #define MODE 0
+#define OPTIMIZATION_GRID
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -23,7 +24,7 @@ struct Params {
     DATA_TYPE_3*            out;
     int*                    label; // 0(core), 1(border), 2(noise)
     int*                    cluster_id;
-    int*                    tmp_cluster_id;
+    // int*                    tmp_cluster_id;
     int*                    nn; // number of neighbors
     int*                    check_label;
     int*                    check_cluster_id;

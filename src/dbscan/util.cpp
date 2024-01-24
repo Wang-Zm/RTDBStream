@@ -210,8 +210,8 @@ using namespace std;
 
 void read_data_from_tao(string& data_file, ScanState &state) {
     state.h_data = (DATA_TYPE_3*) malloc(state.data_num * sizeof(DATA_TYPE_3));
-    state.max_value = (DATA_TYPE*) malloc(3 * sizeof(DATA_TYPE_3));
-    state.min_value = (DATA_TYPE*) malloc(3 * sizeof(DATA_TYPE_3));
+    state.max_value.resize(3);
+    state.min_value.resize(3);
 
     ifstream fin;
     string line;
@@ -252,8 +252,8 @@ void read_data_from_tao(string& data_file, ScanState &state) {
     for (int i = 0; i < 3; i++) {
         std::cout << "DIM[" << i << "]: " << state.min_value[i] << ", " << state.max_value[i] << std::endl;
     }
-    printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
-    printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
+    // printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
+    // printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
 }
 
 size_t get_cpu_memory_usage() {
