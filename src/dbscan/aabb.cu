@@ -1,6 +1,6 @@
 #include <optix.h>
 #include <sutil/vec_math.h>
-#include "optixScan.h"
+#include "dbscan.h"
 
 __global__ void kGenAABB_t (
       DATA_TYPE_3* points,

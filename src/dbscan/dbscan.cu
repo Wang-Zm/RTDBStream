@@ -1,6 +1,6 @@
 #include <optix.h>
 #include <sutil/vec_math.h>
-#include "optixScan.h"
+#include "dbscan.h"
 
 extern "C" {
 __constant__ Params params;

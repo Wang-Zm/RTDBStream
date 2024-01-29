@@ -1,3 +1,6 @@
+#ifndef TIMER_H
+#define TIMER_H
+
 #include <mutex>
 #include <sys/time.h>
 #include <iostream>
@@ -133,3 +136,4 @@ class Timer{
     cout << endl;
   }
 };
+#endif

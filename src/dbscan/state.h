@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
-#include "optixScan.h"
+#include "dbscan.h"
 
 using namespace std;
 
@@ -73,4 +73,13 @@ void read_data_from_tao(string& data_file, ScanState &state);
 size_t get_cpu_memory_usage();
 void start_gpu_mem(size_t* avail_mem);
 void stop_gpu_mem(size_t* avail_mem, size_t* used);
+
+void initialize_optix(ScanState &state);
+void make_gas(ScanState &state);
+void rebuild_gas(ScanState &state);
+void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
+void make_module(ScanState &state);
+void make_program_groups(ScanState &state);
+void make_pipeline(ScanState &state);
+void make_sbt(ScanState &state);
 #endif
