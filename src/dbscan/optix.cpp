@@ -70,7 +70,7 @@ void make_gas(ScanState &state) {
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     OptixAabb *d_aabb;
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_aabb), state.window_size * sizeof(OptixAabb)));
+    CUDA_CHECK(cudaMalloc(&d_aabb, state.window_size * sizeof(OptixAabb)));
     kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
     state.d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
 
@@ -207,6 +207,43 @@ void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle
     CUDA_SYNC_CHECK();
 }
 
+void make_gas_by_cell(ScanState &state) {
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb);
+
+    state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
+
+    // recompute gas_buffer_sizes
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &state.vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &state.vertex_input,
+                1, // num build inputs
+                state.d_temp_buffer_gas,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &state.gas_handle,
+                nullptr,
+                0
+        ));
+    CUDA_SYNC_CHECK();
+}
+
 void make_module(ScanState &state) {
     size_t make_module_start_mem;
     start_gpu_mem(&make_module_start_mem);
@@ -233,7 +270,7 @@ void make_module(ScanState &state) {
     state.pipeline_compile_options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;
 
     size_t inputSize = 0;
-    const char *input = sutil::getInputData(OPTIX_SAMPLE_NAME, OPTIX_SAMPLE_DIR, "optixScan.cu", inputSize);
+    const char *input = sutil::getInputData(OPTIX_SAMPLE_NAME, OPTIX_SAMPLE_DIR, "dbscan.cu", inputSize);
     size_t sizeof_log = sizeof(log);
 
     OPTIX_CHECK_LOG(optixModuleCreateFromPTX(

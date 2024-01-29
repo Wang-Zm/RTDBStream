@@ -43,6 +43,38 @@ extern "C" void kGenAABB(DATA_TYPE_3* points, DATA_TYPE width, unsigned numPrims
     );
 }
 
+__global__ void kGenAABB_by_center_t (DATA_TYPE_3* points, DATA_TYPE* radius, unsigned int N, OptixAabb* aabb) {
+	unsigned int particleIndex = blockIdx.x * blockDim.x + threadIdx.x;
+	if (particleIndex >= N) return;
+	double3 center = {points[particleIndex].x, points[particleIndex].y, points[particleIndex].z};
+	float3 m_min;
+	float3 m_max;
+	m_min.x = center.x - radius[particleIndex];
+	m_min.y = center.y - radius[particleIndex];
+	m_min.z = center.z - radius[particleIndex];
+	m_max.x = center.x + radius[particleIndex];
+	m_max.y = center.y + radius[particleIndex];
+	m_max.z = center.z + radius[particleIndex];
+
+	aabb[particleIndex] =
+	{
+		m_min.x, m_min.y, m_min.z,
+		m_max.x, m_max.y, m_max.z
+	};
+}
+
+extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb) {
+  unsigned int threadsPerBlock = 64;
+  unsigned int numOfBlocks = numPrims / threadsPerBlock + 1;
+
+  kGenAABB_by_center_t <<<numOfBlocks, threadsPerBlock>>> (
+    points,
+    width,
+    numPrims,
+    d_aabb
+    );
+}
+
 /**
  * 1.收集 c_out, ex_cores, neo_cores
  * 2.label 设置

@@ -52,6 +52,7 @@ struct ScanState
     int                             window_size;
     int                             stride_size;
     DATA_TYPE                       radius;
+    DATA_TYPE                       radius_one_half;
     int                             min_pts;
     DATA_TYPE_3*                    h_window;
     int*                            h_nn;
@@ -61,12 +62,17 @@ struct ScanState
     int*                            check_h_label;
     int*                            check_h_cluster_id;
 
+    vector<DATA_TYPE_3>             h_centers;
+    vector<DATA_TYPE>               h_radii;
+    vector<int>                     h_center_idx_in_window;
+
     unsigned*                       h_ray_hits;
     unsigned*                       h_ray_intersections;
 
     unordered_map<int, int>         cell_point_num;
     DATA_TYPE                       cell_length;
     vector<int>                     cell_count;
+    int*                            h_point_cell_id;
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);
@@ -78,6 +84,7 @@ void initialize_optix(ScanState &state);
 void make_gas(ScanState &state);
 void rebuild_gas(ScanState &state);
 void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
+void make_gas_by_cell(ScanState &state);
 void make_module(ScanState &state);
 void make_program_groups(ScanState &state);
 void make_pipeline(ScanState &state);

@@ -6,6 +6,7 @@
 
 #define MODE 0
 #define OPTIMIZATION_GRID
+#define OPTIMIZATION_BVH
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -19,12 +20,10 @@ struct Params {
     float                   tmin;
     float                   tmax;
     int                     data_num;
-    // DATA_TYPE_3*            pre_window;
     DATA_TYPE_3*            window;
     DATA_TYPE_3*            out;
     int*                    label; // 0(core), 1(border), 2(noise)
     int*                    cluster_id;
-    // int*                    tmp_cluster_id;
     int*                    nn; // number of neighbors
     int*                    check_label;
     int*                    check_cluster_id;
@@ -44,12 +43,23 @@ struct Params {
     // int*                    R_out_f;
     // int*                    M_out_f;
 
+    DATA_TYPE*              min_value;
+    int*                    cell_count;
+    DATA_TYPE               cell_length;
+    int*                    point_cell_id;
+    int*                    center_idx_in_window;
+
     // int                     bvh_num;
-    // double                  radius;
+    DATA_TYPE               radius;
     DATA_TYPE               radius2;
+    DATA_TYPE               radius_one_half2;
     int                     min_pts;
     unsigned*               intersection_test_num;
     unsigned*               hit_num;
+
+    DATA_TYPE_3*            centers;
+    DATA_TYPE*              radii;
+    int                     center_num;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
@@ -72,6 +82,7 @@ struct HitGroupData
 };
 
 extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrims, OptixAabb *d_aabb);
+extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb);
 extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts);
 // extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);
 extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
