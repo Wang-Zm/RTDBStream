@@ -151,6 +151,118 @@ void log_common_info(ScanState &state) {
     std::cout << std::endl;
 }
 
+inline int get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
+    int id = 0;
+// #if DIMENSION == 1
+//     id = (vertices[i].x - state.min_value[0]) / state.cell_length;
+// #elif DIMENSION == 3
+    int dim_id_x = (data[i].x - min_value[0]) / cell_length;
+    int dim_id_y = (data[i].y - min_value[1]) / cell_length;
+    int dim_id_z = (data[i].z - min_value[2]) / cell_length;
+    id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
+// #endif
+    return id;
+}
+
+void update_grid(ScanState &state, int update_pos, int window_left, int window_right) {
+    for (int i = window_left; i < window_left + state.stride_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]--;
+    }
+
+    // 遍历 cell_points，查看 cell 中有多少点，若变少了，那么移除前面的点
+    for (auto &t: state.cell_points) {
+        if (int(t.second.size()) > state.cell_point_num[t.first]) {
+            t.second.erase(t.second.begin(), t.second.begin() + t.second.size() - state.cell_point_num[t.first]);
+        }
+    }
+    
+    int pos_start = update_pos * state.stride_size - window_right;
+    for (int i = window_right; i < window_right + state.stride_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]++;
+        state.cell_points[cell_id].push_back(pos_start + i);
+// #ifdef OPTIMIZATION_BVH
+        state.h_point_cell_id[pos_start + i] = cell_id;
+// #endif
+    }
+// #ifdef OPTIMIZATION_BVH
+//     CUDA_CHECK(cudaMemcpy(state.params.point_cell_id + update_pos * state.stride_size, 
+//                             state.h_point_cell_id + update_pos * state.stride_size,
+//                             state.stride_size * sizeof(int),
+//                             cudaMemcpyHostToDevice));
+// #endif
+}
+
+void early_cluster(ScanState &state) { // 根据所属的 cell，快速设置 cluster id
+    unordered_map<int, int> &cell_repres = state.cell_repres;
+    for (int i = 0; i < state.window_size; i++) {
+        int cell_id = state.h_point_cell_id[i];
+        if (state.cell_point_num[cell_id] >= state.min_pts) {
+            state.h_cluster_id[i] = cell_repres[cell_id];
+        } else {
+            state.h_cluster_id[i] = i;
+        }
+    }
+    CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
+}
+
+void get_centers_radii_device(ScanState &state) {
+    CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
+    state.h_centers.clear();
+    state.h_radii.clear();
+    state.h_center_idx_in_window.clear();
+    state.h_cell_point_num.clear();
+    unordered_map<int, int> &cell_repres = state.cell_repres;
+    cell_repres.clear();
+    for (int i = 0; i < state.window_size; i++) {
+        int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
+        if (state.cell_point_num[cell_id] >= state.min_pts) {
+            if (cell_repres.count(cell_id) > 0) continue;
+            int dim_id_x = (state.h_window[i].x - state.min_value[0]) / state.cell_length;
+            int dim_id_y = (state.h_window[i].y - state.min_value[1]) / state.cell_length;
+            int dim_id_z = (state.h_window[i].z - state.min_value[2]) / state.cell_length;
+            DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5) * state.cell_length, 
+                                   state.min_value[1] + (dim_id_y + 0.5) * state.cell_length, 
+                                   state.min_value[2] + (dim_id_z + 0.5) * state.cell_length };
+            state.h_centers.push_back(center);
+            state.h_radii.push_back(state.radius_one_half);
+            cell_repres[cell_id] = i;
+            state.h_center_idx_in_window.push_back(i);
+
+            int cell_sphere_num = state.h_centers.size() - 1; // 和 primIdx 保持一致
+            CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num], state.cell_point_num[cell_id] * sizeof(int)));
+            CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num], 
+                                  state.cell_points[cell_id].data(),
+                                  state.cell_point_num[cell_id] * sizeof(int),
+                                  cudaMemcpyHostToDevice));
+            // 记录点数多少
+            state.h_cell_point_num.push_back(state.cell_point_num[cell_id]);
+        } else {
+            state.h_centers.push_back(state.h_window[i]);
+            state.h_radii.push_back(state.radius);
+            state.h_center_idx_in_window.push_back(i);
+
+            state.h_cell_point_num.push_back(1);
+        }
+    }
+    CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.radii, state.h_radii.data(), state.h_radii.size() * sizeof(DATA_TYPE), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
+                          state.h_center_idx_in_window.data(), 
+                          state.h_center_idx_in_window.size() * sizeof(int), 
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.cell_points, 
+                          state.d_cell_points, 
+                          state.h_centers.size() * sizeof(int*), 
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, 
+                          state.h_cell_point_num.data(), 
+                          state.h_cell_point_num.size() * sizeof(int*), 
+                          cudaMemcpyHostToDevice));
+    state.params.center_num = state.h_centers.size();
+}
+
 bool check(ScanState &state, int window_id) {
     state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
     state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
@@ -216,122 +328,6 @@ bool check(ScanState &state, int window_id) {
     free(state.check_h_cluster_id);
     free(state.h_nn);
     return true;
-}
-
-int get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
-    int id = 0;
-// #if DIMENSION == 1
-//     id = (vertices[i].x - state.min_value[0]) / state.cell_length;
-// #elif DIMENSION == 3
-    int dim_id_x = (data[i].x - min_value[0]) / cell_length;
-    int dim_id_y = (data[i].y - min_value[1]) / cell_length;
-    int dim_id_z = (data[i].z - min_value[2]) / cell_length;
-    id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
-// #endif
-    return id;
-}
-
-void update_grid(ScanState &state, int update_pos, int window_left, int window_right) {
-    for (int i = window_left; i < window_left + state.stride_size; i++) {
-        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
-        state.cell_point_num[cell_id]--;
-    }
-
-    // 遍历 cell_points，查看 cell 中有多少点，若变少了，那么移除前面的点
-    for (auto &t: state.cell_points) {
-        if (int(t.second.size()) > state.cell_point_num[t.first]) {
-            t.second.erase(t.second.begin(), t.second.begin() + t.second.size() - state.cell_point_num[t.first]);
-        }
-    }
-    
-    int pos_start = update_pos * state.stride_size - window_right;
-    for (int i = window_right; i < window_right + state.stride_size; i++) {
-        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
-        state.cell_point_num[cell_id]++;
-        state.cell_points[cell_id].push_back(pos_start + i);
-// #ifdef OPTIMIZATION_BVH
-//             state.h_point_cell_id[pos_start + i] = cell_id;
-// #endif
-    }
-// #ifdef OPTIMIZATION_BVH
-//         CUDA_CHECK(cudaMemcpy(state.params.point_cell_id + update_pos * state.stride_size, 
-//                               state.h_point_cell_id + update_pos * state.stride_size,
-//                               state.stride_size * sizeof(int),
-//                               cudaMemcpyHostToDevice));
-// #endif
-
-    CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
-    unordered_map<int, int> cell_repres;
-    int dense_core_num = 0;
-    for (int i = 0; i < state.window_size; i++) {
-        int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
-        if (state.cell_point_num[cell_id] >= state.min_pts) {
-            dense_core_num++;
-            if (cell_repres.count(cell_id)) {
-                state.h_cluster_id[i] = cell_repres[cell_id];
-            } else {
-                state.h_cluster_id[i] = i;
-                cell_repres[cell_id] = i;
-            }
-        } else {
-            state.h_cluster_id[i] = i;
-        }
-    }
-    CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
-}
-
-void get_centers_radii_device(ScanState &state) {
-    state.h_centers.clear();
-    state.h_radii.clear();
-    state.h_center_idx_in_window.clear();
-    state.h_cell_point_num.clear();
-    unordered_set<int> cell_set;
-    for (int i = 0; i < state.window_size; i++) {
-        int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
-        if (state.cell_point_num[cell_id] >= state.min_pts) {
-            if (cell_set.count(cell_id) > 0) continue;
-            int dim_id_x = (state.h_window[i].x - state.min_value[0]) / state.cell_length;
-            int dim_id_y = (state.h_window[i].y - state.min_value[1]) / state.cell_length;
-            int dim_id_z = (state.h_window[i].z - state.min_value[2]) / state.cell_length;
-            DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5) * state.cell_length, 
-                                   state.min_value[1] + (dim_id_y + 0.5) * state.cell_length, 
-                                   state.min_value[2] + (dim_id_z + 0.5) * state.cell_length };
-            state.h_centers.push_back(center);
-            state.h_radii.push_back(state.radius_one_half);
-            cell_set.insert(cell_id);
-            state.h_center_idx_in_window.push_back(i); // ! 无作用，占空
-
-            int cell_sphere_num = state.h_centers.size() - 1; // 和 primIdx 保持一致
-            CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num], state.cell_point_num[cell_id] * sizeof(int)));
-            CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num], 
-                                  state.cell_points[cell_id].data(),
-                                  state.cell_point_num[cell_id] * sizeof(int),
-                                  cudaMemcpyHostToDevice));
-            // 记录点数多少
-            state.h_cell_point_num.push_back(state.cell_point_num[cell_id]);
-        } else {
-            state.h_centers.push_back(state.h_window[i]);
-            state.h_radii.push_back(state.radius);
-            state.h_center_idx_in_window.push_back(i);
-
-            state.h_cell_point_num.push_back(1);
-        }
-    }
-    CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.radii, state.h_radii.data(), state.h_radii.size() * sizeof(DATA_TYPE), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
-                          state.h_center_idx_in_window.data(), 
-                          state.h_center_idx_in_window.size() * sizeof(int), 
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.cell_points, 
-                          state.d_cell_points, 
-                          state.h_centers.size() * sizeof(int*), 
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, 
-                          state.h_cell_point_num.data(), 
-                          state.h_cell_point_num.size() * sizeof(int*), 
-                          cudaMemcpyHostToDevice));
-    state.params.center_num = state.h_centers.size();
 }
 
 void search(ScanState &state) {
@@ -401,9 +397,13 @@ void search(ScanState &state) {
         timer.stopTimer(&timer.find_cores);
 
 #ifdef OPTIMIZATION_GRID
-        timer.startTimer(&timer.early_cluster);
+        timer.startTimer(&timer.update_grid);
         update_grid(state, update_pos, window_left, window_right);
-        timer.stopTimer(&timer.early_cluster);
+        timer.stopTimer(&timer.update_grid);
+        
+        // timer.startTimer(&timer.early_cluster);
+        // early_cluster(state);
+        // timer.stopTimer(&timer.early_cluster);
 #endif
 
 #ifndef OPTIMIZATION_BVH
@@ -414,12 +414,19 @@ void search(ScanState &state) {
 #endif
 
 #ifdef OPTIMIZATION_BVH
-        timer.startTimer(&timer.hybrid_sphere_bvh);
+        timer.startTimer(&timer.hybrid_sphere);
         get_centers_radii_device(state);
+        timer.stopTimer(&timer.hybrid_sphere);
+
+        timer.startTimer(&timer.build_hybrid_bvh);
         make_gas_by_cell(state);
         state.params.handle = state.gas_handle;
-        timer.stopTimer(&timer.hybrid_sphere_bvh);
+        timer.stopTimer(&timer.build_hybrid_bvh);
 #endif
+
+        timer.startTimer(&timer.early_cluster);
+        early_cluster(state);
+        timer.stopTimer(&timer.early_cluster);
 
         timer.startTimer(&timer.set_cluster_id);
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));

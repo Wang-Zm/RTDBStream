@@ -77,6 +77,7 @@ struct ScanState
     DATA_TYPE                       cell_length;
     vector<int>                     cell_count;
     int*                            h_point_cell_id;
+    unordered_map<int, int>         cell_repres;
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);
