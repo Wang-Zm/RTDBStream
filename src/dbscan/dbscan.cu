@@ -148,44 +148,6 @@ static __forceinline__ __device__ int get_cell_id(DATA_TYPE_3 p, DATA_TYPE* min_
     return id;
 }
 
-// extern "C" __global__ void __raygen__cluster() {
-//     // Lookup our location within the launch grid
-//     const uint3 idx = optixGetLaunchIndex();
-//     if (params.label[idx.x] != 0) return; // * 从 core 发射光线 
-
-//     // Map our launch idx to a screen location and create a ray from the camera location through the screen 
-//     float3 ray_origin, ray_direction;
-//     ray_origin    = { float(params.window[idx.x].x), 
-//                       float(params.window[idx.x].y),
-//                       float(params.window[idx.x].z) };
-//     ray_direction = { 1, 0, 0 };
-
-//     // Trace the ray against our scene hierarchy
-//     unsigned int intersection_test_num = 0;
-//     unsigned int hit_num = 0;
-//     unsigned int ray_id  = idx.x;
-//     optixTrace(
-//             params.handle,      // 应当是针对 cores 构建的树，此时为方便，可直接基于当前窗口构建树
-//             ray_origin,
-//             ray_direction,
-//             params.tmin,                   // Min intersection distance
-//             params.tmax,        // Max intersection distance
-//             0.0f,                   // rayTime -- used for motion blur
-//             OptixVisibilityMask( 255 ), // Specify always visible
-//             OPTIX_RAY_FLAG_NONE,
-//             0,                   // SBT offset   -- See SBT discussion
-//             1,                   // SBT stride   -- See SBT discussion
-//             0,                   // missSBTIndex -- See SBT discussion
-//             intersection_test_num,
-//             hit_num,
-//             ray_id
-//             );
-// #if DEBUG_INFO == 1
-//     atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
-//     atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
-// #endif
-// }
-
 // extern "C" __global__ void __intersection__cluster() {
 //     unsigned primIdx = optixGetPrimitiveIndex();
 //     unsigned ray_id  = optixGetPayload_2();
@@ -270,6 +232,44 @@ extern "C" __global__ void __raygen__cluster() {
 #endif
 }
 
+// extern "C" __global__ void __intersection__cluster() {
+//     unsigned primIdx = optixGetPrimitiveIndex();
+//     unsigned ray_id  = optixGetPayload_2();
+
+//     // 判断是 prim 是 cell-sphere 还是 point-sphere
+//     if (params.radii[primIdx] == params.radius) { // point-sphere
+//         // 先判别是否已经是同一 cluster
+//         int prim_idx_in_window = params.center_idx_in_window[primIdx];
+//         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
+//         // 否则求解两个点之间的距离
+//         DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
+//         if (sqdist >= params.radius2) return; // 不在范围内
+//         if (params.label[prim_idx_in_window] == 0) {
+//             unite(ray_id, prim_idx_in_window, params.cluster_id);
+//         } else {
+//             if (params.cluster_id[prim_idx_in_window] == prim_idx_in_window) {
+//                 atomicCAS(params.cluster_id + prim_idx_in_window, prim_idx_in_window, ray_id);
+//             }
+//             params.label[prim_idx_in_window] = 1;
+//         }
+//     } else { // cell-sphere
+//         int prim_idx_in_window = params.center_idx_in_window[primIdx]; // primIdx 是 window 中第一个属于该 cell 中的点的 idx，可以视为该 cell 的代表点
+//         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
+//         // 否则求解 ray_origin 与该 cell 中每个点之间的距离
+//         int cell_id = get_cell_id(params.centers[primIdx], params.min_value, params.cell_count, params.cell_length);
+//         for (int i = 0; i < params.window_size; i++) { // 这里的遍历可能耗时过多
+//             if (params.point_cell_id[i] == cell_id) {
+//                 if (find_repres(ray_id, params.cluster_id) == find_repres(i, params.cluster_id)) break;
+//                 DATA_TYPE dist = compute_dist(ray_id, i, params.window, params.window);
+//                 if (dist < params.radius2) { // 合并 ray_origin 与该 cell
+//                     unite(ray_id, i, params.cluster_id);
+//                     break;
+//                 }
+//             }
+//         }
+//     }
+// }
+
 extern "C" __global__ void __intersection__cluster() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
@@ -293,16 +293,14 @@ extern "C" __global__ void __intersection__cluster() {
     } else { // cell-sphere
         int prim_idx_in_window = params.center_idx_in_window[primIdx]; // primIdx 是 window 中第一个属于该 cell 中的点的 idx，可以视为该 cell 的代表点
         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
-        // 否则求解 ray_origin 与该 cell 中每个点之间的距离
         int cell_id = get_cell_id(params.centers[primIdx], params.min_value, params.cell_count, params.cell_length);
-        for (int i = 0; i < params.window_size; i++) { // 这里的遍历可能耗时过多
-            if (params.point_cell_id[i] == cell_id) {
-                if (find_repres(ray_id, params.cluster_id) == find_repres(i, params.cluster_id)) break;
-                DATA_TYPE dist = compute_dist(ray_id, i, params.window, params.window);
-                if (dist < params.radius2) { // 合并 ray_origin 与该 cell
-                    unite(ray_id, i, params.cluster_id);
-                    break;
-                }
+        int *points_in_cell = params.cell_points[primIdx];
+        for (int i = 0; i < params.cell_point_num[primIdx]; i++) {
+            if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id)) break;
+            DATA_TYPE dist = compute_dist(ray_id, points_in_cell[i], params.window, params.window);
+            if (dist < params.radius2) { // 合并 ray_origin 与该 cell
+                unite(ray_id, points_in_cell[i], params.cluster_id);
+                break;
             }
         }
     }

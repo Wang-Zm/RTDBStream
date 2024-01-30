@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include "dbscan.h"
+#include "timer.h"
 
 using namespace std;
 
@@ -65,11 +66,14 @@ struct ScanState
     vector<DATA_TYPE_3>             h_centers;
     vector<DATA_TYPE>               h_radii;
     vector<int>                     h_center_idx_in_window;
+    vector<int>                     h_cell_point_num;
 
     unsigned*                       h_ray_hits;
     unsigned*                       h_ray_intersections;
 
     unordered_map<int, int>         cell_point_num;
+    unordered_map<int, vector<int>> cell_points;
+    int**                           d_cell_points;  // 第一层是 GPU 中的指针，d_cell_points[i] (存放于 host mem 中) 的值是 GPU 中的指针
     DATA_TYPE                       cell_length;
     vector<int>                     cell_count;
     int*                            h_point_cell_id;
@@ -79,6 +83,9 @@ void read_data_from_tao(string& data_file, ScanState &state);
 size_t get_cpu_memory_usage();
 void start_gpu_mem(size_t* avail_mem);
 void stop_gpu_mem(size_t* avail_mem, size_t* used);
+int find(int x, int* cid);
+void cluster_with_cpu(ScanState &state, Timer &timer);
+void cluster_with_cuda(ScanState &state, Timer &timer);
 
 void initialize_optix(ScanState &state);
 void make_gas(ScanState &state);

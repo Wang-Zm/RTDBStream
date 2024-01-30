@@ -32,16 +32,6 @@ struct Params {
     int                     window_size;
     int                     stride_left;
     int                     stride_right;
-    // DATA_TYPE_3*            ex_cores;
-    // DATA_TYPE_3*            neo_cores;
-    // DATA_TYPE_3*            c_out;
-    // DATA_TYPE_3*            out_stride;
-    // int*                    c_out_num;
-    // int*                    ex_cores_num;
-    // int*                    neo_cores_num;
-    // int*                    ex_cores_idx; // 在 pre_window 中的索引
-    // int*                    R_out_f;
-    // int*                    M_out_f;
 
     DATA_TYPE*              min_value;
     int*                    cell_count;
@@ -49,7 +39,6 @@ struct Params {
     int*                    point_cell_id;
     int*                    center_idx_in_window;
 
-    // int                     bvh_num;
     DATA_TYPE               radius;
     DATA_TYPE               radius2;
     DATA_TYPE               radius_one_half2;
@@ -60,6 +49,8 @@ struct Params {
     DATA_TYPE_3*            centers;
     DATA_TYPE*              radii;
     int                     center_num;
+    int**                   cell_points; // 仅存放第一层即可
+    int*                    cell_point_num;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;

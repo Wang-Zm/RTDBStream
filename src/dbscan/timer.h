@@ -18,10 +18,12 @@ class Timer{
   double in_stride;
   double find_cores;
   double whole_bvh;
+  double hybrid_sphere_bvh;
   double early_cluster;
   double set_cluster_id;
   double union_cluster_id;
   double copy_cluster_d2h;
+  double free_cell_points;
 
   double out_stride_bvh;
   double out_stride_ray;
@@ -49,10 +51,12 @@ class Timer{
     in_stride = 0;
     find_cores = 0;
     whole_bvh = 0;
+    hybrid_sphere_bvh = 0;
     early_cluster = 0;
     set_cluster_id = 0;
     union_cluster_id = 0;
     copy_cluster_d2h = 0;
+    free_cell_points = 0;
 
     out_stride_bvh = 0;
     out_stride_ray = 0;
@@ -119,9 +123,11 @@ class Timer{
 
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
     cout << "[Time] whole_bvh: " << whole_bvh / query_num << " ms" << endl;
+    cout << "[Time] hybrid_sphere_bvh: " << hybrid_sphere_bvh / query_num << " ms" << endl;
     cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
     cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
+    cout << "[Time] free_cell_points: " << free_cell_points / query_num << " ms" << endl;
     // cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
     
     cout << "[Time] total: " << total / query_num << " ms" << endl;

@@ -117,6 +117,11 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(&state.params.center_idx_in_window, state.window_size * sizeof(int)));
     state.h_point_cell_id = (int*) malloc(state.window_size * sizeof(int));
 
+    CUDA_CHECK(cudaMalloc(&state.params.cell_points, state.window_size * sizeof(int*)));
+    CUDA_CHECK(cudaMalloc(&state.params.cell_point_num, state.window_size * sizeof(int)));
+    state.d_cell_points = (int**) malloc(state.window_size * sizeof(int*));
+    for (int i = 0; i < state.window_size; i++) state.d_cell_points[i] = nullptr;
+
     CUDA_CHECK(cudaMalloc(&state.params.cell_count, 3 * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(state.params.cell_count, state.cell_count.data(), 3 * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc(&state.params.min_value, 3 * sizeof(DATA_TYPE)));
@@ -146,110 +151,12 @@ void log_common_info(ScanState &state) {
     std::cout << std::endl;
 }
 
-int find(int x, int* cid) {
-    return cid[x] == x ? x : cid[x] = find(cid[x], cid);
-}
-
-void cluster_with_cpu(ScanState &state) {
-    // 1. 查找所有点的邻居，判别是否是 core，打上 core label
-    int *check_nn = state.check_h_nn; 
-    int *check_label = state.check_h_label;
-    int *check_cluster_id = state.check_h_cluster_id;
-    DATA_TYPE_3 *window = state.h_window;
-    
-    timer.startTimer(&timer.cpu_cluter_total);
-    memset(check_nn, 0, state.window_size * sizeof(int));
-    for (int i = 0; i < state.window_size; i++) {
-        check_nn[i]++; // 自己
-        for (int j = i + 1; j < state.window_size; j++) {
-            DATA_TYPE_3 O = { window[i].x - window[j].x, 
-                              window[i].y - window[j].y, 
-                              window[i].z - window[j].z };
-            DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-            if (d < state.params.radius2) {
-                check_nn[i]++;
-                check_nn[j]++;
-            }
-        }
-    }
-    for (int i = 0; i < state.window_size; i++) {
-        if (check_nn[i] >= state.min_pts) check_label[i] = 0;
-        else check_label[i] = 2;
-    }
-
-    // 2. 从一个 core 开始 bfs，设置所有的点是该 core_id
-    bool *vis = (bool*) malloc(state.window_size * sizeof(bool));
-    memset(vis, false, state.window_size * sizeof(bool));
-    queue<int> q;
-    for (int i = 0; i < state.window_size; i++) {
-        if (vis[i] || check_label[i] != 0) continue; // 对于 border，应该特殊处理：1）不加到 queue 中
-        vis[i] = true;
-        check_cluster_id[i] = i;
-        q.push(i);
-        while (!q.empty()) {
-            DATA_TYPE_3 p = window[q.front()];
-            q.pop();
-            for (int j = 0; j < state.window_size; j++) {
-                if (!vis[j]) {
-                    DATA_TYPE_3 O = { p.x - window[j].x, 
-                                      p.y - window[j].y, 
-                                      p.z - window[j].z };
-                    DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-                    if (d < state.params.radius2) {
-                        vis[j] = true;
-                        check_cluster_id[j] = i;
-                        if (check_label[j] == 0) q.push(j);
-                        else check_label[j] = 1; // border
-                    }
-                }
-            }
-        }
-    }
-    free(vis);
-    timer.stopTimer(&timer.cpu_cluter_total);
-}
-
-void cluster_with_cuda(ScanState &state) {
-    CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMemset(state.params.check_nn, 0, state.window_size * sizeof(int)));
-
-    timer.startTimer(&timer.cuda_cluter_total);
-
-    timer.startTimer(&timer.cuda_find_neighbors);
-    find_neighbors(state.params.check_nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
-    CUDA_SYNC_CHECK();
-    find_cores(state.params.check_label, state.params.check_nn, state.params.check_cluster_id, state.window_size, state.min_pts);
-    CUDA_SYNC_CHECK();
-    timer.stopTimer(&timer.cuda_find_neighbors);
-
-    timer.startTimer(&timer.cuda_set_clusters);
-    set_cluster_id(state.params.check_nn, state.params.check_label, state.params.check_cluster_id, state.params.window, state.window_size, state.params.radius2);
-    CUDA_SYNC_CHECK();
-    timer.stopTimer(&timer.cuda_set_clusters);
-
-    CUDA_CHECK(cudaMemcpy(state.check_h_nn, state.params.check_nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(state.check_h_label, state.params.check_label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(state.check_h_cluster_id, state.params.check_cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    for (int i = 0; i < state.window_size; i++) {
-        if (state.check_h_label[i] == 2) continue;
-        find(i, state.check_h_cluster_id);
-    }
-    timer.stopTimer(&timer.cuda_cluter_total);
-
-    CUDA_CHECK(cudaFree(state.params.check_nn));
-    CUDA_CHECK(cudaFree(state.params.check_label));
-    CUDA_CHECK(cudaFree(state.params.check_cluster_id));
-}
-
 bool check(ScanState &state, int window_id) {
-    // 得到 cpu 中的结果
     state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
     state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
     state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    // cluster_with_cpu(state);
-    cluster_with_cuda(state);
+    // cluster_with_cpu(state, timer);
+    cluster_with_cuda(state, timer);
     
     // 将 gpu 中的结果传回来
     state.h_nn = (int*) malloc(state.window_size * sizeof(int));
@@ -324,10 +231,60 @@ int get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& ce
     return id;
 }
 
+void update_grid(ScanState &state, int update_pos, int window_left, int window_right) {
+    for (int i = window_left; i < window_left + state.stride_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]--;
+    }
+
+    // 遍历 cell_points，查看 cell 中有多少点，若变少了，那么移除前面的点
+    for (auto &t: state.cell_points) {
+        if (int(t.second.size()) > state.cell_point_num[t.first]) {
+            t.second.erase(t.second.begin(), t.second.begin() + t.second.size() - state.cell_point_num[t.first]);
+        }
+    }
+    
+    int pos_start = update_pos * state.stride_size - window_right;
+    for (int i = window_right; i < window_right + state.stride_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]++;
+        state.cell_points[cell_id].push_back(pos_start + i);
+// #ifdef OPTIMIZATION_BVH
+//             state.h_point_cell_id[pos_start + i] = cell_id;
+// #endif
+    }
+// #ifdef OPTIMIZATION_BVH
+//         CUDA_CHECK(cudaMemcpy(state.params.point_cell_id + update_pos * state.stride_size, 
+//                               state.h_point_cell_id + update_pos * state.stride_size,
+//                               state.stride_size * sizeof(int),
+//                               cudaMemcpyHostToDevice));
+// #endif
+
+    CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
+    unordered_map<int, int> cell_repres;
+    int dense_core_num = 0;
+    for (int i = 0; i < state.window_size; i++) {
+        int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
+        if (state.cell_point_num[cell_id] >= state.min_pts) {
+            dense_core_num++;
+            if (cell_repres.count(cell_id)) {
+                state.h_cluster_id[i] = cell_repres[cell_id];
+            } else {
+                state.h_cluster_id[i] = i;
+                cell_repres[cell_id] = i;
+            }
+        } else {
+            state.h_cluster_id[i] = i;
+        }
+    }
+    CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
+}
+
 void get_centers_radii_device(ScanState &state) {
     state.h_centers.clear();
     state.h_radii.clear();
     state.h_center_idx_in_window.clear();
+    state.h_cell_point_num.clear();
     unordered_set<int> cell_set;
     for (int i = 0; i < state.window_size; i++) {
         int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
@@ -343,27 +300,36 @@ void get_centers_radii_device(ScanState &state) {
             state.h_radii.push_back(state.radius_one_half);
             cell_set.insert(cell_id);
             state.h_center_idx_in_window.push_back(i); // ! 无作用，占空
-            // if (i == 63) {
-            //     printf("[Debug] i == 63, cell_set, get_centers_radii_device, h_center_idx_in_window[%lu]=63, radius=%lf\n", state.h_center_idx_in_window.size(), state.radius_one_half);
-            // }
+
+            int cell_sphere_num = state.h_centers.size() - 1; // 和 primIdx 保持一致
+            CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num], state.cell_point_num[cell_id] * sizeof(int)));
+            CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num], 
+                                  state.cell_points[cell_id].data(),
+                                  state.cell_point_num[cell_id] * sizeof(int),
+                                  cudaMemcpyHostToDevice));
+            // 记录点数多少
+            state.h_cell_point_num.push_back(state.cell_point_num[cell_id]);
         } else {
-            // if (i == 63) {
-            //     printf("[Debug] get_centers_radii_device, h_center_idx_in_window[%lu]=63, radius=%lf\n", state.h_center_idx_in_window.size(), state.radius);
-            // }
             state.h_centers.push_back(state.h_window[i]);
             state.h_radii.push_back(state.radius);
             state.h_center_idx_in_window.push_back(i);
+
+            state.h_cell_point_num.push_back(1);
         }
-        // if (i == 63) {
-        //     printf("state.cell_point_num[cell_id]=%d\n", state.cell_point_num[cell_id]);
-        // }
     }
-    // printf("[Debug] cell_set.size=%lu, center_idx_in_window.size=%lu, h_radii.size=%lu\n", cell_set.size(), state.h_center_idx_in_window.size(), state.h_radii.size());
     CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.radii, state.h_radii.data(), state.h_radii.size() * sizeof(DATA_TYPE), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
                           state.h_center_idx_in_window.data(), 
                           state.h_center_idx_in_window.size() * sizeof(int), 
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.cell_points, 
+                          state.d_cell_points, 
+                          state.h_centers.size() * sizeof(int*), 
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, 
+                          state.h_cell_point_num.data(), 
+                          state.h_cell_point_num.size() * sizeof(int*), 
                           cudaMemcpyHostToDevice));
     state.params.center_num = state.h_centers.size();
 }
@@ -390,6 +356,7 @@ void search(ScanState &state) {
     for (int i = 0; i < state.window_size; i++) {
         int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
         state.cell_point_num[cell_id]++;
+        state.cell_points[cell_id].push_back(i);
         state.h_point_cell_id[i] = cell_id;
     }
     CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.stride_size * sizeof(int), cudaMemcpyHostToDevice));
@@ -433,50 +400,9 @@ void search(ScanState &state) {
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.find_cores);
 
-        // 创建 hashtable，长度为 > window_size 的 2 的倍数；在计算点的 cell_idx 的过程中将 cell_id 插入到其中，在核方法中调用 insert 
-        // 在 RT 程序中，可计算点所属的 cell_id，进而直接得到其中的点数，如果 >= min_pts，说明是 dense core？
-        // 之后是否还需要涉及 cell 中点的个数的记录？初始归类后后续无需再考虑 cid 问题了
-        // 1）在计算点的 cell_idx 的过程中将 cell_id 插入到其中，在核方法中调用 insert
-        // 2）再启动 cuda 核方法来初始化点的 cid
 #ifdef OPTIMIZATION_GRID
         timer.startTimer(&timer.early_cluster);
-        for (int i = window_left; i < window_left + state.stride_size; i++) {
-            int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // get_cell_id 方法需要改造一下
-            state.cell_point_num.erase(cell_id);
-        }
-        int pos_start = update_pos * state.stride_size - window_right;
-        for (int i = window_right; i < window_right + state.stride_size; i++) {
-            int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
-            state.cell_point_num[cell_id]++;
-#ifdef OPTIMIZATION_BVH
-            state.h_point_cell_id[pos_start + i] = cell_id;
-#endif
-        }
-#ifdef OPTIMIZATION_BVH
-        CUDA_CHECK(cudaMemcpy(state.params.point_cell_id + update_pos * state.stride_size, 
-                              state.h_point_cell_id + update_pos * state.stride_size,
-                              state.stride_size * sizeof(int),
-                              cudaMemcpyHostToDevice));
-#endif
-
-        CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
-        unordered_map<int, int> cell_repres;
-        int dense_core_num = 0;
-        for (int i = 0; i < state.window_size; i++) {
-            int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
-            if (state.cell_point_num[cell_id] >= state.min_pts) {
-                dense_core_num++;
-                if (cell_repres.count(cell_id)) {
-                    state.h_cluster_id[i] = cell_repres[cell_id];
-                } else {
-                    state.h_cluster_id[i] = i;
-                    cell_repres[cell_id] = i;
-                }
-            } else {
-                state.h_cluster_id[i] = i;
-            }
-        }
-        CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
+        update_grid(state, update_pos, window_left, window_right);
         timer.stopTimer(&timer.early_cluster);
 #endif
 
@@ -488,12 +414,11 @@ void search(ScanState &state) {
 #endif
 
 #ifdef OPTIMIZATION_BVH
-        // 确定 sphere centers 与 radii
+        timer.startTimer(&timer.hybrid_sphere_bvh);
         get_centers_radii_device(state);
-        // printf("[Debug] center_num=%d\n", state.params.center_num);
-        // 基于 dense cell 构建 BVH tree
         make_gas_by_cell(state);
         state.params.handle = state.gas_handle;
+        timer.stopTimer(&timer.hybrid_sphere_bvh);
 #endif
 
         timer.startTimer(&timer.set_cluster_id);
@@ -512,6 +437,16 @@ void search(ScanState &state) {
             find(i, state.h_cluster_id);
         }
         timer.stopTimer(&timer.union_cluster_id);
+
+        // * 释放空间
+        timer.startTimer(&timer.free_cell_points);
+        for (size_t i = 0; i < state.h_centers.size(); i++) {
+            if (state.d_cell_points[i] != nullptr) {
+                CUDA_CHECK(cudaFree(state.d_cell_points[i]));
+                state.d_cell_points[i] = nullptr;
+            }
+        }
+        timer.stopTimer(&timer.free_cell_points);
 
         stride_num++;
         remaining_data_num  -= state.stride_size;
@@ -584,6 +519,7 @@ void cleanup(ScanState &state) {
     free(state.h_cluster_id);
     free(state.h_window);
     free(state.h_point_cell_id);
+    free(state.d_cell_points);
 
     // free device memory
     CUDA_CHECK(cudaFree(reinterpret_cast<void *>(state.sbt.raygenRecord)));
