@@ -87,6 +87,7 @@ void stop_gpu_mem(size_t* avail_mem, size_t* used);
 int find(int x, int* cid);
 void cluster_with_cpu(ScanState &state, Timer &timer);
 void cluster_with_cuda(ScanState &state, Timer &timer);
+bool check(ScanState &state, int window_id, Timer &timer);
 
 void initialize_optix(ScanState &state);
 void make_gas(ScanState &state);

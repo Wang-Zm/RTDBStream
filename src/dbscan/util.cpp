@@ -182,3 +182,70 @@ void cluster_with_cuda(ScanState &state, Timer &timer) {
     CUDA_CHECK(cudaFree(state.params.check_label));
     CUDA_CHECK(cudaFree(state.params.check_cluster_id));
 }
+
+bool check(ScanState &state, int window_id, Timer &timer) {
+    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
+    state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
+    state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
+    // cluster_with_cpu(state, timer);
+    cluster_with_cuda(state, timer);
+    
+    // 将 gpu 中的结果传回来
+    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+
+    int *nn = state.h_nn, *check_nn = state.check_h_nn;
+    int *label = state.h_label, *check_label = state.check_h_label;
+    int *cid = state.h_cluster_id, *check_cid = state.check_h_cluster_id;
+    for (int i = 0; i < state.window_size; i++) {
+        if (nn[i] != check_nn[i]) {
+            printf("Error on window %d: nn[%d] = %d, check_nn[%d] = %d\n", 
+                    window_id, i, state.h_nn[i], i, state.check_h_nn[i]);
+            return false;
+        }
+    }
+    for (int i = 0; i < state.window_size; i++) {
+        if (label[i] != check_label[i]) {
+            printf("Error on window %d: label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", 
+                    window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
+            return false;
+        }
+    }
+    for (int i = 0; i < state.window_size; i++) {
+        if (label[i] == 0) {
+            if (cid[i] != check_cid[i]) {
+                printf("Error on window %d: cid[%d] = %d, check_cid[%d] = %d; "
+                       "label[%d] = %d, check_label[%d] = %d; "
+                       "nn[%d] = %d, check_nn[%d] = %d\n", 
+                        window_id, i, cid[i], i, check_cid[i], 
+                        i, label[i], i, check_label[i], 
+                        i, nn[i], i, check_nn[i]);
+                return false;
+            }
+        } else if (label[i] == 1) {
+            DATA_TYPE_3 p = state.h_window[i];
+            bool is_correct = false;
+            for (int j = 0; j < state.window_size; j++) {
+                if (j == i) continue;
+                DATA_TYPE_3 O = {p.x - state.h_window[j].x, p.y - state.h_window[j].y, p.z - state.h_window[j].z};
+                DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+                if (d < state.params.radius2) {
+                    if (cid[j] == cid[i]) { // 验证成功
+                        is_correct = true;
+                        break;
+                    }
+                }
+            }
+            if (!is_correct) { // border 的 label 错误，打印问题
+                printf("Error on window %d: cid[%d] = %d, but border[%d] doesn't have a core belonging to cluster %d\n", 
+                        window_id, i, cid[i], i, cid[i]);
+                return false;
+            }
+        }
+    }
+    free(state.check_h_nn);
+    free(state.check_h_label);
+    free(state.check_h_cluster_id);
+    free(state.h_nn);
+    return true;
+}

@@ -194,19 +194,6 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
 // #endif
 }
 
-void early_cluster(ScanState &state) { // 根据所属的 cell，快速设置 cluster id
-    unordered_map<int, int> &cell_repres = state.cell_repres;
-    for (int i = 0; i < state.window_size; i++) {
-        int cell_id = state.h_point_cell_id[i];
-        if (state.cell_point_num[cell_id] >= state.min_pts) {
-            state.h_cluster_id[i] = cell_repres[cell_id];
-        } else {
-            state.h_cluster_id[i] = i;
-        }
-    }
-    CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
-}
-
 void get_centers_radii_device(ScanState &state) {
     CUDA_CHECK(cudaMemcpy(state.h_window, state.params.window, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
     state.h_centers.clear();
@@ -263,71 +250,17 @@ void get_centers_radii_device(ScanState &state) {
     state.params.center_num = state.h_centers.size();
 }
 
-bool check(ScanState &state, int window_id) {
-    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
-    state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
-    state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    // cluster_with_cpu(state, timer);
-    cluster_with_cuda(state, timer);
-    
-    // 将 gpu 中的结果传回来
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
-    CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-
-    int *nn = state.h_nn, *check_nn = state.check_h_nn;
-    int *label = state.h_label, *check_label = state.check_h_label;
-    int *cid = state.h_cluster_id, *check_cid = state.check_h_cluster_id;
+void early_cluster(ScanState &state) { // 根据所属的 cell，快速设置 cluster id
+    unordered_map<int, int> &cell_repres = state.cell_repres;
     for (int i = 0; i < state.window_size; i++) {
-        if (nn[i] != check_nn[i]) {
-            printf("Error on window %d: nn[%d] = %d, check_nn[%d] = %d\n", 
-                    window_id, i, state.h_nn[i], i, state.check_h_nn[i]);
-            return false;
+        int cell_id = state.h_point_cell_id[i];
+        if (state.cell_point_num[cell_id] >= state.min_pts) {
+            state.h_cluster_id[i] = cell_repres[cell_id];
+        } else {
+            state.h_cluster_id[i] = i;
         }
     }
-    for (int i = 0; i < state.window_size; i++) {
-        if (label[i] != check_label[i]) {
-            printf("Error on window %d: label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", 
-                    window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
-            return false;
-        }
-    }
-    for (int i = 0; i < state.window_size; i++) {
-        if (label[i] == 0) {
-            if (cid[i] != check_cid[i]) {
-                printf("Error on window %d: cid[%d] = %d, check_cid[%d] = %d; "
-                       "label[%d] = %d, check_label[%d] = %d; "
-                       "nn[%d] = %d, check_nn[%d] = %d\n", 
-                        window_id, i, cid[i], i, check_cid[i], 
-                        i, label[i], i, check_label[i], 
-                        i, nn[i], i, check_nn[i]);
-                return false;
-            }
-        } else if (label[i] == 1) {
-            DATA_TYPE_3 p = state.h_window[i];
-            bool is_correct = false;
-            for (int j = 0; j < state.window_size; j++) {
-                if (j == i) continue;
-                DATA_TYPE_3 O = {p.x - state.h_window[j].x, p.y - state.h_window[j].y, p.z - state.h_window[j].z};
-                DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-                if (d < state.params.radius2) {
-                    if (cid[j] == cid[i]) { // 验证成功
-                        is_correct = true;
-                        break;
-                    }
-                }
-            }
-            if (!is_correct) { // border 的 label 错误，打印问题
-                printf("Error on window %d: cid[%d] = %d, but border[%d] doesn't have a core belonging to cluster %d\n", 
-                        window_id, i, cid[i], i, cid[i]);
-                return false;
-            }
-        }
-    }
-    free(state.check_h_nn);
-    free(state.check_h_label);
-    free(state.check_h_cluster_id);
-    free(state.h_nn);
-    return true;
+    CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
 }
 
 void search(ScanState &state) {
@@ -465,7 +398,7 @@ void search(ScanState &state) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
-        if (!check(state, window_left / state.stride_size)) { exit(1); }
+        if (!check(state, window_left / state.stride_size, timer)) { exit(1); }
 
         printf("[Step] Finish window %d\n", window_left / state.stride_size);
     }
