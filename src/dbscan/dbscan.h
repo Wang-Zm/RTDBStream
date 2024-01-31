@@ -22,13 +22,13 @@ struct Params {
     int                     data_num;
     DATA_TYPE_3*            window;
     DATA_TYPE_3*            out;
+    DATA_TYPE_3*            out_stride;
     int*                    label; // 0(core), 1(border), 2(noise)
     int*                    cluster_id;
     int*                    nn; // number of neighbors
     int*                    check_label;
     int*                    check_cluster_id;
     int*                    check_nn;
-    int                     operation;
     int                     window_size;
     int                     stride_left;
     int                     stride_right;

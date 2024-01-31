@@ -6,95 +6,7 @@ extern "C" {
 __constant__ Params params;
 }
 
-extern "C" __global__ void __raygen__rg() {
-    // Lookup our location within the launch grid
-    const uint3 idx = optixGetLaunchIndex();    
-    if (params.operation == 0 && idx.x >= params.stride_left && idx.x < params.stride_right) return; //! 减少部分光线的发射
 
-    // Map our launch idx to a screen location and create a ray from the camera
-    // location through the screen 
-    float3 ray_origin, ray_direction;
-    ray_origin    = { float(params.window[idx.x].x), 
-                      float(params.window[idx.x].y),
-                      float(params.window[idx.x].z) };
-    ray_direction = { 1, 0, 0 };
-
-    // Trace the ray against our scene hierarchy
-    unsigned int intersection_test_num = 0;
-    unsigned int hit_num = 0;
-    unsigned int ray_id  = idx.x;
-    if (params.operation == 0) {
-        optixTrace(
-                params.out_stride_handle,
-                ray_origin,
-                ray_direction,
-                params.tmin,                   // Min intersection distance
-                params.tmax,        // Max intersection distance
-                0.0f,                   // rayTime -- used for motion blur
-                OptixVisibilityMask( 255 ), // Specify always visible
-                OPTIX_RAY_FLAG_NONE,
-                0,                   // SBT offset   -- See SBT discussion
-                1,                   // SBT stride   -- See SBT discussion
-                0,                   // missSBTIndex -- See SBT discussion
-                intersection_test_num,
-                hit_num,
-                ray_id
-                );
-    } else {
-        optixTrace(
-                params.in_stride_handle,
-                ray_origin,
-                ray_direction,
-                params.tmin,                   // Min intersection distance
-                params.tmax,        // Max intersection distance
-                0.0f,                   // rayTime -- used for motion blur
-                OptixVisibilityMask( 255 ), // Specify always visible
-                OPTIX_RAY_FLAG_NONE,
-                0,                   // SBT offset   -- See SBT discussion
-                1,                   // SBT stride   -- See SBT discussion
-                0,                   // missSBTIndex -- See SBT discussion
-                intersection_test_num,
-                hit_num,
-                ray_id
-                );
-    }
-#if DEBUG_INFO == 1
-    atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
-    atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
-#endif
-}
-
-extern "C" __global__ void __intersection__cube() {
-    unsigned primIdx = optixGetPrimitiveIndex();
-    unsigned ray_id  = optixGetPayload_2();
-#if DEBUG_INFO == 1
-    optixSetPayload_0(optixGetPayload_0() + 1);
-#endif
-    const DATA_TYPE_3 point    = params.out[primIdx];
-    const DATA_TYPE_3 ray_orig = params.window[ray_id];
-    DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
-    DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-    if (sqdist < params.radius2) {
-        if (params.operation == 0) {
-            atomicSub(params.nn + ray_id, 1);
-        } else if (params.operation == 1) {
-            atomicAdd(params.nn + ray_id, 1);
-            if (ray_id < params.stride_left || ray_id >= params.stride_right) {
-                atomicAdd(params.nn + params.stride_left + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
-            }
-        }
-    }
-#if DEBUG_INFO == 1
-    optixSetPayload_1(optixGetPayload_1() + 1);
-#endif
-}
-
-extern "C" __global__ void __anyhit__terminate_ray() {
-    optixTerminateRay();
-}
-
-extern "C" __global__ void __miss__ms() {
-}
 
 static __forceinline__ __device__ int find_repres(int v, int* cid) {
     int par = cid[v];
@@ -146,6 +58,137 @@ static __forceinline__ __device__ int get_cell_id(DATA_TYPE_3 p, DATA_TYPE* min_
     int dim_id_z = (p.z - min_value[2]) / cell_length;
     int id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
     return id;
+}
+
+extern "C" __global__ void __raygen__rg() {
+    // Lookup our location within the launch grid
+    const uint3 idx = optixGetLaunchIndex();    
+    if (idx.y == 0 && idx.x >= params.stride_left && idx.x < params.stride_right) return;
+
+    // Map our launch idx to a screen location and create a ray from the camera
+    // location through the screen 
+    float3 ray_origin, ray_direction;
+    ray_origin    = { float(params.window[idx.x].x), 
+                      float(params.window[idx.x].y),
+                      float(params.window[idx.x].z) };
+    ray_direction = { 1, 0, 0 };
+
+    // Trace the ray against our scene hierarchy
+    unsigned int intersection_test_num = 0;
+    unsigned int hit_num = 0;
+    unsigned int ray_id  = idx.x;
+    unsigned int op      = idx.y;
+    if (op == 0) {
+        optixTrace(params.out_stride_handle,
+               ray_origin,
+               ray_direction,
+               params.tmin,                   // Min intersection distance
+               params.tmax,        // Max intersection distance
+               0.0f,                   // rayTime -- used for motion blur
+               OptixVisibilityMask( 255 ), // Specify always visible
+               OPTIX_RAY_FLAG_NONE,
+               0,                   // SBT offset   -- See SBT discussion
+               1,                   // SBT stride   -- See SBT discussion
+               0,                   // missSBTIndex -- See SBT discussion
+               intersection_test_num,
+               hit_num,
+               ray_id,
+               op);
+    } else {
+        optixTrace(params.in_stride_handle,
+               ray_origin,
+               ray_direction,
+               params.tmin,                   // Min intersection distance
+               params.tmax,        // Max intersection distance
+               0.0f,                   // rayTime -- used for motion blur
+               OptixVisibilityMask( 255 ), // Specify always visible
+               OPTIX_RAY_FLAG_NONE,
+               0,                   // SBT offset   -- See SBT discussion
+               1,                   // SBT stride   -- See SBT discussion
+               0,                   // missSBTIndex -- See SBT discussion
+               intersection_test_num,
+               hit_num,
+               ray_id,
+               op);
+    }
+    // optixTrace(op == 0 ? params.out_stride_handle : params.in_stride_handle,
+    //            ray_origin,
+    //            ray_direction,
+    //            params.tmin,                   // Min intersection distance
+    //            params.tmax,        // Max intersection distance
+    //            0.0f,                   // rayTime -- used for motion blur
+    //            OptixVisibilityMask( 255 ), // Specify always visible
+    //            OPTIX_RAY_FLAG_NONE,
+    //            0,                   // SBT offset   -- See SBT discussion
+    //            1,                   // SBT stride   -- See SBT discussion
+    //            0,                   // missSBTIndex -- See SBT discussion
+    //            intersection_test_num,
+    //            hit_num,
+    //            ray_id,
+    //            op);
+#if DEBUG_INFO == 1
+    atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
+    atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
+#endif
+}
+
+// extern "C" __global__ void __intersection__cube() {
+//     unsigned primIdx = optixGetPrimitiveIndex();
+//     unsigned ray_id  = optixGetPayload_2();
+//     unsigned op      = optixGetPayload_3();
+// #if DEBUG_INFO == 1
+//     optixSetPayload_0(optixGetPayload_0() + 1);
+// #endif
+//     const DATA_TYPE_3 point    = params.out[primIdx];
+//     const DATA_TYPE_3 ray_orig = params.window[ray_id];
+//     DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
+//     DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
+//     if (sqdist < params.radius2) {
+//         if (op == 0) {
+//             atomicSub(params.nn + ray_id, 1);
+//         } else if (op == 1) {
+//             atomicAdd(params.nn + ray_id, 1);
+//             if (ray_id < params.stride_left || ray_id >= params.stride_right) {
+//                 atomicAdd(params.nn + params.stride_left + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
+//             }
+//         }
+//     }
+// #if DEBUG_INFO == 1
+//     optixSetPayload_1(optixGetPayload_1() + 1);
+// #endif
+// }
+
+extern "C" __global__ void __intersection__cube() {
+    unsigned primIdx = optixGetPrimitiveIndex();
+    unsigned ray_id  = optixGetPayload_2();
+    unsigned op      = optixGetPayload_3();
+#if DEBUG_INFO == 1
+    optixSetPayload_0(optixGetPayload_0() + 1);
+#endif
+    const DATA_TYPE_3 point = op == 0 ? params.out_stride[primIdx] : params.out[primIdx];
+    const DATA_TYPE_3 ray_orig = params.window[ray_id];
+    DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
+    DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
+    if (sqdist < params.radius2) {
+        if (op == 0) {
+            atomicSub(params.nn + ray_id, 1);
+        } else if (op == 1) {
+            atomicAdd(params.nn + ray_id, 1);
+            if (ray_id < params.stride_left || ray_id >= params.stride_right) {
+                atomicAdd(params.nn + params.stride_left + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
+            }
+        }
+    }
+#if DEBUG_INFO == 1
+    optixSetPayload_1(optixGetPayload_1() + 1);
+#endif
+}
+
+// extern "C" __global__ void __anyhit__terminate_ray() {
+//     optixTerminateRay();
+// }
+
+extern "C" __global__ void __miss__ms() {
 }
 
 // extern "C" __global__ void __intersection__cluster() {
@@ -210,6 +253,7 @@ extern "C" __global__ void __raygen__cluster() {
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
     unsigned int ray_id  = idx.x;
+    unsigned int op      = 0; // 占空
     optixTrace(
             params.handle,      // 应当是针对 cores 构建的树，此时为方便，可直接基于当前窗口构建树
             ray_origin,
@@ -224,7 +268,8 @@ extern "C" __global__ void __raygen__cluster() {
             0,                   // missSBTIndex -- See SBT discussion
             intersection_test_num,
             hit_num,
-            ray_id
+            ray_id,
+            op
             );
 #if DEBUG_INFO == 1
     atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);

@@ -64,147 +64,214 @@ void initialize_optix(ScanState &state) {
     OPTIX_CHECK(optixDeviceContextCreate(cuCtx, &options, &state.context));
 }
 
-void make_gas(ScanState &state) {
+// void make_gas(ScanState &state) {
+//     OptixAccelBuildOptions accel_options = {};
+//     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+//     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+//     OptixAabb *d_aabb;
+//     CUDA_CHECK(cudaMalloc(&d_aabb, state.window_size * sizeof(OptixAabb)));
+//     kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
+//     state.d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
+
+//     OptixBuildInput &vertex_input = state.vertex_input;
+//     vertex_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
+//     vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
+//     vertex_input.customPrimitiveArray.flags = state.vertex_input_flags;
+//     vertex_input.customPrimitiveArray.numSbtRecords = 1;
+//     vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+//     // it's important to pass 0 to sbtIndexOffsetBuffer
+//     vertex_input.customPrimitiveArray.sbtIndexOffsetBuffer = 0;
+//     vertex_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
+//     vertex_input.customPrimitiveArray.primitiveIndexOffset = 0;
+
+//     OptixAccelBufferSizes gas_buffer_sizes;
+//     OPTIX_CHECK(optixAccelComputeMemoryUsage(
+//                 state.context,
+//                 &accel_options,
+//                 &vertex_input,
+//                 1, // Number of build inputs
+//                 &gas_buffer_sizes
+//                 ));
+//     state.gas_buffer_sizes = gas_buffer_sizes;
+//     CUDA_CHECK(cudaMalloc(
+//                reinterpret_cast<void **>(&state.d_temp_buffer_gas),
+//                gas_buffer_sizes.tempSizeInBytes
+//               ));
+
+//     // non-compacted output and size of compacted GAS.
+//     // CUdeviceptr d_buffer_temp_output_gas_and_compacted_size;
+//     size_t compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes.outputSizeInBytes, 8ull);
+//     CUDA_CHECK(cudaMalloc(
+//                reinterpret_cast<void **>(&state.d_gas_output_buffer),
+//                compactedSizeOffset + 8
+//               ));
+
+//     size_t final_gas_size;
+//     OPTIX_CHECK(optixAccelBuild(
+//                 state.context,
+//                 0, // CUDA stream
+//                 &accel_options,
+//                 &vertex_input,
+//                 1, // num build inputs
+//                 state.d_temp_buffer_gas,
+//                 gas_buffer_sizes.tempSizeInBytes,
+//                 state.d_gas_output_buffer,
+//                 gas_buffer_sizes.outputSizeInBytes,
+//                 &state.gas_handle,
+//                 nullptr,
+//                 0
+//         ));
+//     final_gas_size = compactedSizeOffset;
+//     std::cerr << "Final GAS size: " << (float)final_gas_size / (1024 * 1024) << " MB" << std::endl;
+//     printf("Final GAS size: %f MB\n", (float)final_gas_size / (1024 * 1024));
+// }
+
+void make_gas_for_each_stride(ScanState &state, int unit_num) {
+    // * 为每个 stride bvh 设置 temp buffer，output buffer，gas handle
     OptixAccelBuildOptions accel_options = {};
-    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD;
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     OptixAabb *d_aabb;
     CUDA_CHECK(cudaMalloc(&d_aabb, state.window_size * sizeof(OptixAabb)));
-    kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
     state.d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
-
+    
     OptixBuildInput &vertex_input = state.vertex_input;
     vertex_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
     vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
     vertex_input.customPrimitiveArray.flags = state.vertex_input_flags;
     vertex_input.customPrimitiveArray.numSbtRecords = 1;
-    vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+    vertex_input.customPrimitiveArray.numPrimitives = state.stride_size;
     // it's important to pass 0 to sbtIndexOffsetBuffer
     vertex_input.customPrimitiveArray.sbtIndexOffsetBuffer = 0;
     vertex_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
     vertex_input.customPrimitiveArray.primitiveIndexOffset = 0;
+    
+    for (int i = 0; i < unit_num; i++) {
+        kGenAABB(state.params.window + i * state.stride_size, state.radius, state.stride_size, d_aabb);
+        
+        OptixAccelBufferSizes gas_buffer_sizes;
+        OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                    state.context,
+                    &accel_options,
+                    &vertex_input,
+                    1, // Number of build inputs
+                    &gas_buffer_sizes
+                    ));
+        state.gas_buffer_sizes = gas_buffer_sizes;
 
-    OptixAccelBufferSizes gas_buffer_sizes;
-    OPTIX_CHECK(optixAccelComputeMemoryUsage(
-                state.context,
-                &accel_options,
-                &vertex_input,
-                1, // Number of build inputs
-                &gas_buffer_sizes
-                ));
-    state.gas_buffer_sizes = gas_buffer_sizes;
-    CUDA_CHECK(cudaMalloc(
-               reinterpret_cast<void **>(&state.d_temp_buffer_gas),
-               gas_buffer_sizes.tempSizeInBytes
-              ));
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_temp_buffer_list[i]),
+                   gas_buffer_sizes.tempSizeInBytes));
 
-    // non-compacted output and size of compacted GAS.
-    // CUdeviceptr d_buffer_temp_output_gas_and_compacted_size;
-    size_t compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes.outputSizeInBytes, 8ull);
-    CUDA_CHECK(cudaMalloc(
-               reinterpret_cast<void **>(&state.d_gas_output_buffer),
-               compactedSizeOffset + 8
-              ));
+        size_t compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes.outputSizeInBytes, 8ull);
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_output_buffer_list[i]),
+                   compactedSizeOffset + 8));
 
-    size_t final_gas_size;
-    OPTIX_CHECK(optixAccelBuild(
-                state.context,
-                0, // CUDA stream
-                &accel_options,
-                &vertex_input,
-                1, // num build inputs
-                state.d_temp_buffer_gas,
-                gas_buffer_sizes.tempSizeInBytes,
-                state.d_gas_output_buffer,
-                gas_buffer_sizes.outputSizeInBytes,
-                &state.gas_handle,
-                nullptr,
-                0
-        ));
-    final_gas_size = compactedSizeOffset;
-    std::cerr << "Final GAS size: " << (float)final_gas_size / (1024 * 1024) << " MB" << std::endl;
-    printf("Final GAS size: %f MB\n", (float)final_gas_size / (1024 * 1024));
-}
-
-void rebuild_gas(ScanState &state) {
-    OptixAccelBuildOptions accel_options = {};
-    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
-    // 改为 OPTIX_BUILD_FLAG_PREFER_FAST_TRACE 时会有性能提升但提升不多
-    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
-
-    state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
-    state.vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
-
-    // recompute gas_buffer_sizes
-    OptixAccelBufferSizes gas_buffer_sizes;
-    OPTIX_CHECK(optixAccelComputeMemoryUsage(
-                state.context,
-                &accel_options,
-                &state.vertex_input,
-                1, // Number of build inputs
-                &gas_buffer_sizes
-                ));
-    OPTIX_CHECK(optixAccelBuild(
-                state.context,
-                0, // CUDA stream
-                &accel_options,
-                &state.vertex_input,
-                1, // num build inputs
-                state.d_temp_buffer_gas,
-                gas_buffer_sizes.tempSizeInBytes,
-                state.d_gas_output_buffer,
-                gas_buffer_sizes.outputSizeInBytes,
-                &state.gas_handle,
-                nullptr,
-                0
-        ));
-    CUDA_SYNC_CHECK();
-}
-
-// update_num: 更新 AABB 的数量、重新构建 BVH tree 的点数
-void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle) {
-    OptixAccelBuildOptions accel_options = {};
-    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
-    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
-
-    // update aabb
-    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
-    if (gas_handle == state.in_stride_gas_handle) { // 复制一次
-        kGenAABB(state.params.window + update_pos * state.stride_size,
-                 state.radius,
-                 state.stride_size,
-                 d_aabb + update_pos * state.stride_size);
+        OPTIX_CHECK(optixAccelBuild(
+                    state.context,
+                    0, // CUDA stream
+                    &accel_options,
+                    &vertex_input,
+                    1, // num build inputs
+                    state.d_gas_temp_buffer_list[i],
+                    gas_buffer_sizes.tempSizeInBytes,
+                    state.d_gas_output_buffer_list[i],
+                    gas_buffer_sizes.outputSizeInBytes,
+                    &state.handle_list[i],
+                    nullptr,
+                    0
+            ));
+        // printf("Final GAS size: %f MB\n", (float)compactedSizeOffset / (1024 * 1024));
     }
 
-    CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb + update_pos * state.stride_size);
-    state.vertex_input.customPrimitiveArray.aabbBuffers = &d_aabb_ptr;
-    state.vertex_input.customPrimitiveArray.numPrimitives = state.stride_size;
+    // * 为 in_stride 申请空间
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_temp_buffer),
+               state.gas_buffer_sizes.tempSizeInBytes));
+    size_t compactedSizeOffset = roundUp<size_t>(state.gas_buffer_sizes.outputSizeInBytes, 8ull);
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_output_buffer),
+               compactedSizeOffset + 8));
 
-    // recompute gas_buffer_sizes
-    OptixAccelBufferSizes gas_buffer_sizes;
+    // * 为 hybrid gas 申请空间
+    vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+    kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
+    OptixAccelBufferSizes gas_buffer_sizes_hybrid;
     OPTIX_CHECK(optixAccelComputeMemoryUsage(
                 state.context,
                 &accel_options,
-                &state.vertex_input,
+                &vertex_input,
                 1, // Number of build inputs
-                &gas_buffer_sizes
+                &gas_buffer_sizes_hybrid
                 ));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_temp_buffer_hybrid),
+               gas_buffer_sizes_hybrid.tempSizeInBytes));
+    compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes_hybrid.outputSizeInBytes, 8ull);
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_output_buffer_hybrid),
+               compactedSizeOffset + 8));
+}
+
+// void rebuild_gas(ScanState &state) {
+//     OptixAccelBuildOptions accel_options = {};
+//     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+//     // 改为 OPTIX_BUILD_FLAG_PREFER_FAST_TRACE 时会有性能提升但提升不多
+//     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+//     state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
+//     state.vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+
+//     // recompute gas_buffer_sizes
+//     OptixAccelBufferSizes gas_buffer_sizes;
+//     OPTIX_CHECK(optixAccelComputeMemoryUsage(
+//                 state.context,
+//                 &accel_options,
+//                 &state.vertex_input,
+//                 1, // Number of build inputs
+//                 &gas_buffer_sizes
+//                 ));
+//     OPTIX_CHECK(optixAccelBuild(
+//                 state.context,
+//                 0, // CUDA stream
+//                 &accel_options,
+//                 &state.vertex_input,
+//                 1, // num build inputs
+//                 state.d_temp_buffer_gas,
+//                 gas_buffer_sizes.tempSizeInBytes,
+//                 state.d_gas_output_buffer,
+//                 gas_buffer_sizes.outputSizeInBytes,
+//                 &state.gas_handle,
+//                 nullptr,
+//                 0
+//         ));
+//     CUDA_SYNC_CHECK();
+// }
+
+void rebuild_gas_stride(ScanState &state, int update_pos) {
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+    
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    kGenAABB(state.params.window + update_pos * state.stride_size,
+             state.radius,
+             state.stride_size,
+             d_aabb);
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.stride_size;
+
     OPTIX_CHECK(optixAccelBuild(
                 state.context,
                 0, // CUDA stream
                 &accel_options,
                 &state.vertex_input,
                 1, // num build inputs
-                state.d_temp_buffer_gas,
-                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_temp_buffer,
+                state.gas_buffer_sizes.tempSizeInBytes,
                 state.d_gas_output_buffer,
-                gas_buffer_sizes.outputSizeInBytes,
-                &gas_handle,
+                state.gas_buffer_sizes.outputSizeInBytes,
+                &state.params.in_stride_handle,
                 nullptr,
                 0
         ));
-    CUDA_SYNC_CHECK();
+    // CUDA_SYNC_CHECK();
 }
 
 void make_gas_by_cell(ScanState &state) {
@@ -214,11 +281,8 @@ void make_gas_by_cell(ScanState &state) {
 
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
     kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb);
-
-    state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
 
-    // recompute gas_buffer_sizes
     OptixAccelBufferSizes gas_buffer_sizes;
     OPTIX_CHECK(optixAccelComputeMemoryUsage(
                 state.context,
@@ -233,15 +297,15 @@ void make_gas_by_cell(ScanState &state) {
                 &accel_options,
                 &state.vertex_input,
                 1, // num build inputs
-                state.d_temp_buffer_gas,
+                state.d_gas_temp_buffer_hybrid,
                 gas_buffer_sizes.tempSizeInBytes,
-                state.d_gas_output_buffer,
+                state.d_gas_output_buffer_hybrid,
                 gas_buffer_sizes.outputSizeInBytes,
-                &state.gas_handle,
+                &state.params.handle,
                 nullptr,
                 0
         ));
-    CUDA_SYNC_CHECK();
+    // CUDA_SYNC_CHECK();
 }
 
 void make_module(ScanState &state) {
@@ -258,7 +322,7 @@ void make_module(ScanState &state) {
 
     state.pipeline_compile_options.usesMotionBlur = false;
     state.pipeline_compile_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
-    state.pipeline_compile_options.numPayloadValues = 3;
+    state.pipeline_compile_options.numPayloadValues = 4;
     state.pipeline_compile_options.numAttributeValues = 0;
 #ifdef DEBUG // Enables debug exceptions during optix launches. This may incur significant performance cost and should only be done during development.
     pipeline_compile_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH | OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
@@ -358,8 +422,8 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";
-    hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
-    hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__terminate_ray";
+    // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
+    // hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__terminate_ray";
 
     OPTIX_CHECK_LOG(optixProgramGroupCreate(
         state.context,

@@ -17,13 +17,17 @@ struct ScanState
     Params                          params;
     CUdeviceptr                     d_params;
     OptixDeviceContext              context                   = nullptr;
-    // OptixTraversableHandle          pre_gas_handle;
-    OptixTraversableHandle          out_stride_gas_handle;
-    OptixTraversableHandle          in_stride_gas_handle;
-    OptixTraversableHandle          gas_handle;
-    CUdeviceptr                     d_gas_output_buffer       = 0;
     OptixBuildInput                 vertex_input              = {};
-    CUdeviceptr                     d_temp_buffer_gas         = 0;
+
+    CUdeviceptr*                    d_gas_output_buffer_list;
+    CUdeviceptr*                    d_gas_temp_buffer_list;
+    CUdeviceptr                     d_gas_output_buffer       = 0;
+    CUdeviceptr                     d_gas_temp_buffer         = 0;
+    CUdeviceptr                     d_gas_output_buffer_hybrid= 0;
+    CUdeviceptr                     d_gas_temp_buffer_hybrid  = 0;
+    OptixTraversableHandle*         handle_list;
+
+
     OptixAccelBufferSizes           gas_buffer_sizes;
     const uint32_t                  vertex_input_flags[1]     = {OPTIX_GEOMETRY_FLAG_NONE};
     CUdeviceptr                     d_aabb_ptr                = 0;
@@ -90,9 +94,10 @@ void cluster_with_cuda(ScanState &state, Timer &timer);
 bool check(ScanState &state, int window_id, Timer &timer);
 
 void initialize_optix(ScanState &state);
-void make_gas(ScanState &state);
-void rebuild_gas(ScanState &state);
-void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
+// void make_gas(ScanState &state);
+void make_gas_for_each_stride(ScanState &state, int unit_num);
+// void rebuild_gas(ScanState &state);
+void rebuild_gas_stride(ScanState &state, int update_pos);
 void make_gas_by_cell(ScanState &state);
 void make_module(ScanState &state);
 void make_program_groups(ScanState &state);
