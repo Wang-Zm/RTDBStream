@@ -77,6 +77,7 @@ struct ScanState
 
     unordered_map<int, int>         cell_point_num;
     unordered_map<int, vector<int>> cell_points;
+    unordered_map<int, int*>        cell_points_ptr;
     int**                           d_cell_points;  // 第一层是 GPU 中的指针，d_cell_points[i] (存放于 host mem 中) 的值是 GPU 中的指针
     DATA_TYPE                       cell_length;
     vector<int>                     cell_count;

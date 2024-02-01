@@ -170,15 +170,18 @@ void find_neighbors_cores(ScanState &state, int update_pos) {
     state.params.out_stride_handle = state.handle_list[update_pos];
     state.params.stride_left = update_pos * state.stride_size;
     state.params.stride_right = state.params.stride_left + state.stride_size;
-    
-    CUDA_CHECK(cudaMemcpy(state.params.out_stride, state.params.out, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
+    memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
+
+    CUDA_CHECK(cudaMemcpyAsync(state.params.out_stride, state.params.out, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK(cudaMemcpyAsync(state.params.out, state.h_window + update_pos * state.stride_size, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemsetAsync(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
     rebuild_gas_stride(state, update_pos);
-    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice)); // ? 可以为 params 申请一个 pinned memory
+    // ! 这里的 cudaMemcpy 会让上方的异步操作停下，但是对 state.d_params 使用异步 cudaMemcpy 也没有报错
     OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 2, 1));
     
     find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts);
+    // CUDA_SYNC_CHECK();
 }
 
 void update_grid(ScanState &state, int update_pos, int window_left, int window_right) {
@@ -209,17 +212,24 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
 //                             state.stride_size * sizeof(int),
 //                             cudaMemcpyHostToDevice));
 // #endif
+
+    // for (auto &t: state.cell_point_num) { // 耗时太多，不如直接进行计算，这样效果太差了
+    //     if (int(t.second) >= state.min_pts) {
+    //         CUDA_CHECK(cudaMallocHost(&state.cell_points_ptr[t.first], t.second * sizeof(int))); // 最后要 free 掉
+    //         memcpy(state.cell_points_ptr[t.first], state.cell_points[t.first].data(), t.second * sizeof(int));
+    //     }
+    // }
 }
 
 void get_centers_radii_device(ScanState &state, int update_pos) {
-    // TODO: 尝试是否可以为 state.h_window 使用 memcpy 方法
-    memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
+    timer.startTimer(&timer.get_dense_sphere);
     state.h_centers.clear();
     state.h_radii.clear();
     state.h_center_idx_in_window.clear();
     state.h_cell_point_num.clear();
     unordered_map<int, int> &cell_repres = state.cell_repres;
     cell_repres.clear();
+    vector<int> cell_sphere_num_list, cell_id_list;
     for (int i = 0; i < state.window_size; i++) {
         int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
         if (state.cell_point_num[cell_id] >= state.min_pts) {
@@ -236,11 +246,19 @@ void get_centers_radii_device(ScanState &state, int update_pos) {
             state.h_center_idx_in_window.push_back(i);
 
             int cell_sphere_num = state.h_centers.size() - 1; // 和 primIdx 保持一致
-            CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num], state.cell_point_num[cell_id] * sizeof(int)));
-            CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num], 
-                                  state.cell_points[cell_id].data(),
-                                  state.cell_point_num[cell_id] * sizeof(int),
-                                  cudaMemcpyHostToDevice));
+            // timer.startTimer(&timer.dense_cell_points_copy);
+            // CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num], state.cell_point_num[cell_id] * sizeof(int)));
+            // CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num], 
+            //                       state.cell_points[cell_id].data(),
+            //                       state.cell_point_num[cell_id] * sizeof(int),
+            //                       cudaMemcpyHostToDevice));
+            // CUDA_CHECK(cudaMemcpyAsync(state.d_cell_points[cell_sphere_num], 
+            //                            state.cell_points_ptr[cell_id],
+            //                            state.cell_point_num[cell_id] * sizeof(int),
+            //                            cudaMemcpyHostToDevice));
+            // timer.stopTimer(&timer.dense_cell_points_copy);
+            cell_id_list.push_back(cell_id);
+            cell_sphere_num_list.push_back(cell_sphere_num);
             // 记录点数多少
             state.h_cell_point_num.push_back(state.cell_point_num[cell_id]);
         } else {
@@ -251,7 +269,19 @@ void get_centers_radii_device(ScanState &state, int update_pos) {
             state.h_cell_point_num.push_back(1);
         }
     }
-    // ? 下面的是否可以使用 stream？是否能够得到准确的结果？上面执行完下面才会执行，如果数组不再动，可以直接执行
+    timer.stopTimer(&timer.get_dense_sphere);
+
+    timer.startTimer(&timer.dense_cell_points_copy);
+    for (size_t i = 0; i < cell_sphere_num_list.size(); i++) {
+        CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num_list[i]], state.cell_point_num[cell_id_list[i]] * sizeof(int)));
+        CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num_list[i]], 
+                                state.cell_points[cell_id_list[i]].data(),
+                                state.cell_point_num[cell_id_list[i]] * sizeof(int),
+                                cudaMemcpyHostToDevice));
+    }
+    timer.stopTimer(&timer.dense_cell_points_copy);
+
+    timer.startTimer(&timer.cell_points_memcpy);
     CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.radii, state.h_radii.data(), state.h_radii.size() * sizeof(DATA_TYPE), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
@@ -267,6 +297,7 @@ void get_centers_radii_device(ScanState &state, int update_pos) {
                           state.h_cell_point_num.size() * sizeof(int*), 
                           cudaMemcpyHostToDevice));
     state.params.center_num = state.h_centers.size();
+    timer.stopTimer(&timer.cell_points_memcpy);
 }
 
 void early_cluster(ScanState &state) { // 根据所属的 cell，快速设置 cluster id
@@ -315,13 +346,15 @@ void search(ScanState &state, bool timing) {
     CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.stride_size * sizeof(int), cudaMemcpyHostToDevice));
 
     // * Start sliding
-    state.h_window = (DATA_TYPE_3*) malloc(state.window_size * sizeof(DATA_TYPE_3));
+    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
         
+        timer.startTimer(&timer.find_cores);
         find_neighbors_cores(state, update_pos);
+        timer.stopTimer(&timer.find_cores);
 
         timer.startTimer(&timer.update_grid);
         update_grid(state, update_pos, window_left, window_right);
@@ -342,9 +375,10 @@ void search(ScanState &state, bool timing) {
         timer.startTimer(&timer.set_cluster_id);
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
+        CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_cluster_id);
 
-        timer.startTimer(&timer.union_cluster_id); // ? 当 cudaMemcpy 0 和创建的 stream重合在一起时，会发生什么 -> 会等待默认流结束
+        timer.startTimer(&timer.union_cluster_id);
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         for (int i = 0; i < state.window_size; i++) {
@@ -361,6 +395,7 @@ void search(ScanState &state, bool timing) {
                 state.d_cell_points[i] = nullptr;
             }
         }
+        CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.free_cell_points);
 
         CUdeviceptr tmp;
@@ -442,7 +477,7 @@ void cleanup(ScanState &state) {
     free(state.h_data);
     free(state.h_label);
     free(state.h_cluster_id);
-    free(state.h_window);
+    CUDA_CHECK(cudaFreeHost(state.h_window));
     free(state.h_point_cell_id);
     free(state.d_cell_points);
     free(state.d_gas_temp_buffer_list); // TODO: free 其中的每一项

@@ -41,6 +41,10 @@ class Timer{
   double cpu_cluter_total;
   double cuda_cluter_total;
 
+  double dense_cell_points_copy;
+  double cell_points_memcpy;
+  double get_dense_sphere;
+
   Timer() {
     struct timeval t1;                           
     gettimeofday(&t1, NULL);
@@ -77,6 +81,10 @@ class Timer{
     total = 0;
     cpu_cluter_total = 0;
     cuda_cluter_total = 0;
+
+    dense_cell_points_copy = 0;
+    cell_points_memcpy = 0;
+    get_dense_sphere = 0;
   }
   
   // void commonGetStartTime(int timeId) {
@@ -130,12 +138,13 @@ class Timer{
     cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
 
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
+    
+    cout << "[Time] update_grid: " << update_grid / query_num << " ms" << endl;
 
     // cout << "[Time] whole_bvh: " << whole_bvh / query_num << " ms" << endl;
     cout << "[Time] hybrid_sphere: " << hybrid_sphere / query_num << " ms" << endl;
     cout << "[Time] build_hybrid_bvh: " << build_hybrid_bvh / query_num << " ms" << endl;
 
-    cout << "[Time] update_grid: " << update_grid / query_num << " ms" << endl;
     cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
     cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
@@ -149,6 +158,10 @@ class Timer{
     cout << "[Time] cuda_cluter_total: " << cuda_cluter_total / query_num << " ms" << endl;
     cout << "[Time] cuda_find_neighbors: " << cuda_find_neighbors / query_num << " ms" << endl;
     cout << "[Time] cuda_set_clusters: " << cuda_set_clusters / query_num << " ms" << endl;
+    
+    cout << "[Time] dense_cell_points_copy: " << dense_cell_points_copy / query_num << " ms" << endl;
+    cout << "[Time] cell_points_memcpy: " << cell_points_memcpy / query_num << " ms" << endl;
+    cout << "[Time] get_dense_sphere: " << get_dense_sphere / query_num << " ms" << endl;
 
     cout << "##############################" << endl;
     cout << endl;
