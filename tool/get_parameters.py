@@ -31,6 +31,7 @@ def calc_epi(matrix, k, noise_ratio):
     result = Parallel(n_jobs=-1)(delayed(calculate_kth_distance)(i) for i in range(rows))
 
     result.sort(reverse=True)
+    print(result[:5])
     print("epi index=%d" % int(rows * noise_ratio))
     return result[int(rows * noise_ratio)]
 

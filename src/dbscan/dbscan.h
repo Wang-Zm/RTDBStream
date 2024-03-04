@@ -7,6 +7,7 @@
 #define MODE 0
 #define OPTIMIZATION_GRID
 #define OPTIMIZATION_BVH
+// #define OPTIMIZATION_HETEROGENEOUS
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -51,6 +52,7 @@ struct Params {
     int                     center_num;
     int**                   cell_points; // 仅存放第一层即可
     int*                    cell_point_num;
+    int*                    points_in_dense_cells;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;

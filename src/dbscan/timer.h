@@ -159,9 +159,9 @@ class Timer{
     cout << "[Time] cuda_find_neighbors: " << cuda_find_neighbors / query_num << " ms" << endl;
     cout << "[Time] cuda_set_clusters: " << cuda_set_clusters / query_num << " ms" << endl;
     
+    cout << "[Time] get_dense_sphere: " << get_dense_sphere / query_num << " ms" << endl;
     cout << "[Time] dense_cell_points_copy: " << dense_cell_points_copy / query_num << " ms" << endl;
     cout << "[Time] cell_points_memcpy: " << cell_points_memcpy / query_num << " ms" << endl;
-    cout << "[Time] get_dense_sphere: " << get_dense_sphere / query_num << " ms" << endl;
 
     cout << "##############################" << endl;
     cout << endl;

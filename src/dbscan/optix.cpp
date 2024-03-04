@@ -305,7 +305,9 @@ void make_gas_by_cell(ScanState &state) {
                 nullptr,
                 0
         ));
-    // CUDA_SYNC_CHECK();
+#ifndef OPTIMIZATION_HETEROGENEOUS
+    CUDA_SYNC_CHECK();
+#endif
 }
 
 void make_module(ScanState &state) {

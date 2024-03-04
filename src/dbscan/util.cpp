@@ -57,6 +57,137 @@ void read_data_from_tao(string& data_file, ScanState &state) {
     // printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
 }
 
+void read_data_from_geolife(string& data_file, ScanState &state) {
+    state.h_data = (DATA_TYPE_3*) malloc(state.data_num * sizeof(DATA_TYPE_3));
+    state.max_value.resize(3);
+    state.min_value.resize(3);
+
+    ifstream fin;
+    string line;
+    fin.open(data_file, ios::binary);
+    if (!fin.is_open()) {
+        std::cerr << "Fail to open [" << data_file << "]!" << std::endl;
+    }
+    for (int dim_id = 0; dim_id < 3; dim_id++) {
+        state.max_value[dim_id] = -FLT_MAX;
+        state.min_value[dim_id] = FLT_MAX;
+    }
+    for (int rid = 0; rid < state.data_num; rid++) {
+        // getline(fin, line);
+        // sscanf(line.c_str(), "%lf,%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y, &state.h_data[rid].z);
+        fin.read((char *) &state.h_data[rid].x, sizeof(double));
+        fin.read((char *) &state.h_data[rid].y, sizeof(double));
+        fin.read((char *) &state.h_data[rid].z, sizeof(double));
+        if (state.max_value[0] < state.h_data[rid].x) {
+            state.max_value[0] = state.h_data[rid].x;
+        }
+        if (state.min_value[0] > state.h_data[rid].x) {
+            state.min_value[0] = state.h_data[rid].x;
+        }
+
+        if (state.max_value[1] < state.h_data[rid].y) {
+            state.max_value[1] = state.h_data[rid].y;
+        }
+        if (state.min_value[1] > state.h_data[rid].y) {
+            state.min_value[1] = state.h_data[rid].y;
+        }
+
+        if (state.max_value[2] < state.h_data[rid].z) {
+            state.max_value[2] = state.h_data[rid].z;
+        }
+        if (state.min_value[2] > state.h_data[rid].z) {
+            state.min_value[2] = state.h_data[rid].z;
+        }
+    }
+    fin.close();
+
+    for (int i = 0; i < 3; i++) {
+        std::cout << "DIM[" << i << "]: " << state.min_value[i] << ", " << state.max_value[i] << std::endl;
+    }
+    printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
+    printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
+}
+
+void read_data_from_rbf(string& data_file, ScanState &state) {
+    state.h_data = (DATA_TYPE_3*) malloc(state.data_num * sizeof(DATA_TYPE_3));
+    state.max_value.resize(3);
+    state.min_value.resize(3);
+
+    ifstream fin;
+    string line;
+    fin.open(data_file, ios::in);
+    if (!fin.is_open()) {
+        std::cerr << "Fail to open [" << data_file << "]!" << std::endl;
+    }
+    for (int dim_id = 0; dim_id < 2; dim_id++) {
+        state.max_value[dim_id] = -FLT_MAX;
+        state.min_value[dim_id] = FLT_MAX;
+    }
+    getline(fin, line); // read the unused line
+    for (int rid = 0; rid < state.data_num; rid++) {
+        getline(fin, line);
+        sscanf(line.c_str(), "%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y);
+        state.h_data[rid].z = 0;
+        if (state.max_value[0] < state.h_data[rid].x) {
+            state.max_value[0] = state.h_data[rid].x;
+        }
+        if (state.min_value[0] > state.h_data[rid].x) {
+            state.min_value[0] = state.h_data[rid].x;
+        }
+
+        if (state.max_value[1] < state.h_data[rid].y) {
+            state.max_value[1] = state.h_data[rid].y;
+        }
+        if (state.min_value[1] > state.h_data[rid].y) {
+            state.min_value[1] = state.h_data[rid].y;
+        }
+    }
+    fin.close();
+
+    for (int i = 0; i < 2; i++) {
+        std::cout << "DIM[" << i << "]: " << state.min_value[i] << ", " << state.max_value[i] << std::endl;
+    }
+    // printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
+    // printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
+}
+
+void read_data_from_stk(string& data_file, ScanState &state) {
+    state.h_data = (DATA_TYPE_3*) malloc(state.data_num * sizeof(DATA_TYPE_3));
+    state.max_value.resize(3);
+    state.min_value.resize(3);
+
+    ifstream fin;
+    string line;
+    fin.open(data_file, ios::in);
+    if (!fin.is_open()) {
+        std::cerr << "Fail to open [" << data_file << "]!" << std::endl;
+    }
+    for (int dim_id = 0; dim_id < 1; dim_id++) {
+        state.max_value[dim_id] = -FLT_MAX;
+        state.min_value[dim_id] = FLT_MAX;
+    }
+    getline(fin, line); // read the unused line
+    for (int rid = 0; rid < state.data_num; rid++) {
+        getline(fin, line);
+        sscanf(line.c_str(), "%lf", &state.h_data[rid].x);
+        state.h_data[rid].y = 0;
+        state.h_data[rid].z = 0;
+        if (state.max_value[0] < state.h_data[rid].x) {
+            state.max_value[0] = state.h_data[rid].x;
+        }
+        if (state.min_value[0] > state.h_data[rid].x) {
+            state.min_value[0] = state.h_data[rid].x;
+        }
+    }
+    fin.close();
+
+    for (int i = 0; i < 1; i++) {
+        std::cout << "DIM[" << i << "]: " << state.min_value[i] << ", " << state.max_value[i] << std::endl;
+    }
+    // printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
+    // printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
+}
+
 size_t get_cpu_memory_usage() {
     FILE* file = fopen("/proc/self/status", "r");
     int result = -1;

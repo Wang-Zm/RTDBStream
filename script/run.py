@@ -4,8 +4,8 @@ import numpy as np
 
 build_type = 'Release'
 
-def perf_tao(n, W, S, K, R, data_file):
-    output_file = f"log/{logtime}-W{W}-S{S}-K{K}-R{R}-tao.log"
+def perf(n, W, S, K, R, data_file, log_file):
+    output_file = f"log/{logtime}-W{W}-S{S}-K{K}-R{R}-{log_file}.log"
     args = f'-n {n} -W {W} -S {S} -K {K} -R {R} -f dataset/{data_file}'
     # -n 575468 -W 10000 -S 500 -K 50 -R 1 -f dataset/tao.txt
     cmd = f"./build/bin/dbscan {args} >> {output_file}"
@@ -16,4 +16,9 @@ def perf_tao(n, W, S, K, R, data_file):
     os.system(cmd)
         
 logtime = time.strftime("%y%m%d-%H%M%S")
-perf_tao(n=575468, W=10000, S=500, K=50, R=1, data_file='tao.txt')
+# perf(n=575468, W=10000, S=500, K=50, R=1, data_file='tao.txt', log_file='tao')
+# perf(n=24876978, W=100000, S=5000, K=765, R=0.002, data_file='geolife.bin', log_file='geolife')
+# perf(n=14876978, W=100000, S=5000, K=765, R=0.002, data_file='geolife.bin', log_file='geolife')
+perf(n=40000, W=10000, S=500, K=4, R=0.019607, data_file='RBF4_40000.csv', log_file='rbf')
+perf(n=1048572, W=100000, S=5000, K=50, R=0.45, data_file='stock.txt', log_file='stk')
+# set args -n 24876978 -W 100000 -S 5000 -K 765 -R 0.002 -f dataset/geolife.bin

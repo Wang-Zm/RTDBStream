@@ -79,6 +79,7 @@ struct ScanState
     unordered_map<int, vector<int>> cell_points;
     unordered_map<int, int*>        cell_points_ptr;
     int**                           d_cell_points;  // 第一层是 GPU 中的指针，d_cell_points[i] (存放于 host mem 中) 的值是 GPU 中的指针
+    int*                            points_in_dense_cells;
     DATA_TYPE                       cell_length;
     vector<int>                     cell_count;
     int*                            h_point_cell_id;
@@ -86,6 +87,9 @@ struct ScanState
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);
+void read_data_from_geolife(string& data_file, ScanState &state);
+void read_data_from_rbf(string& data_file, ScanState &state);
+void read_data_from_stk(string& data_file, ScanState &state);
 size_t get_cpu_memory_usage();
 void start_gpu_mem(size_t* avail_mem);
 void stop_gpu_mem(size_t* avail_mem, size_t* used);
