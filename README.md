@@ -54,3 +54,7 @@ Your GPU must support NVIDIA RTX (hardware raytracing acceleration). For consume
     [Mem] Device memory used for data(MB): 26
     BVH Node / slide: 8953
     ```
+
+STK 1d 100000 5000 50 0.45
+RBF 2d 10000 500 4 0.019607
+GeoLife 3d 100000 5000 765 0.002
