@@ -5,9 +5,10 @@
 #define THREAD_NUM 80
 
 #define MODE 0
-#define OPTIMIZATION_GRID
-#define OPTIMIZATION_BVH
+// #define OPTIMIZATION_GRID
+// #define OPTIMIZATION_BVH
 // #define OPTIMIZATION_HETEROGENEOUS
+#define OPTIMIZATION_LEVEL 2
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -30,6 +31,7 @@ struct Params {
     int*                    check_label;
     int*                    check_cluster_id;
     int*                    check_nn;
+    int                     operation;
     int                     window_size;
     int                     stride_left;
     int                     stride_right;

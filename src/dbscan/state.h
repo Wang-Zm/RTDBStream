@@ -26,6 +26,9 @@ struct ScanState
     CUdeviceptr                     d_gas_output_buffer_hybrid= 0;
     CUdeviceptr                     d_gas_temp_buffer_hybrid  = 0;
     OptixTraversableHandle*         handle_list;
+    OptixTraversableHandle          gas_handle;
+    OptixTraversableHandle          out_stride_gas_handle;
+    OptixTraversableHandle          in_stride_gas_handle;
 
 
     OptixAccelBufferSizes           gas_buffer_sizes;
@@ -99,10 +102,12 @@ void cluster_with_cuda(ScanState &state, Timer &timer);
 bool check(ScanState &state, int window_id, Timer &timer);
 
 void initialize_optix(ScanState &state);
-// void make_gas(ScanState &state);
+void make_gas(ScanState &state);
 void make_gas_for_each_stride(ScanState &state, int unit_num);
-// void rebuild_gas(ScanState &state);
+void rebuild_gas(ScanState &state);
 void rebuild_gas_stride(ScanState &state, int update_pos);
+void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
+void make_gas_by_cell_grid(ScanState &state);
 void make_gas_by_cell(ScanState &state);
 void make_module(ScanState &state);
 void make_program_groups(ScanState &state);
