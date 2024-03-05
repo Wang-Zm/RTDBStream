@@ -6,8 +6,6 @@ extern "C" {
 __constant__ Params params;
 }
 
-
-
 static __forceinline__ __device__ int find_repres(int v, int* cid) {
     int par = cid[v];
     if (par != v) {
@@ -60,6 +58,46 @@ static __forceinline__ __device__ int get_cell_id(DATA_TYPE_3 p, DATA_TYPE* min_
     return id;
 }
 
+extern "C" __global__ void __raygen__rg_naive() {
+    // Lookup our location within the launch grid
+    const uint3 idx = optixGetLaunchIndex();    
+
+    // Map our launch idx to a screen location and create a ray from the camera
+    // location through the screen 
+    float3 ray_origin, ray_direction;
+    ray_origin    = { float(params.out[idx.x].x), 
+                      float(params.out[idx.x].y),
+                      float(params.out[idx.x].z) };
+    ray_direction = { 1, 0, 0 };
+
+    // Trace the ray against our scene hierarchy
+    unsigned int intersection_test_num = 0;
+    unsigned int hit_num = 0;
+    unsigned int ray_id  = idx.x;
+    unsigned int op      = 0; // 占空
+    optixTrace(
+            params.handle,
+            ray_origin,
+            ray_direction,
+            params.tmin,                   // Min intersection distance
+            params.tmax,        // Max intersection distance
+            0.0f,                   // rayTime -- used for motion blur
+            OptixVisibilityMask( 255 ), // Specify always visible
+            OPTIX_RAY_FLAG_NONE,
+            0,                   // SBT offset   -- See SBT discussion
+            1,                   // SBT stride   -- See SBT discussion
+            0,                   // missSBTIndex -- See SBT discussion
+            intersection_test_num,
+            hit_num,
+            ray_id,
+            op
+            );
+#if DEBUG_INFO == 1
+    atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
+    atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
+#endif
+}
+
 extern "C" __global__ void __raygen__rg_grid() {
     // Lookup our location within the launch grid
     const uint3 idx = optixGetLaunchIndex();    
@@ -77,6 +115,7 @@ extern "C" __global__ void __raygen__rg_grid() {
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
     unsigned int ray_id  = idx.x;
+    unsigned int op      = 0;
     if (params.operation == 0) {
         optixTrace(
                 params.out_stride_handle,
@@ -92,7 +131,8 @@ extern "C" __global__ void __raygen__rg_grid() {
                 0,                   // missSBTIndex -- See SBT discussion
                 intersection_test_num,
                 hit_num,
-                ray_id
+                ray_id,
+                op
                 );
     } else {
         optixTrace(
@@ -109,7 +149,8 @@ extern "C" __global__ void __raygen__rg_grid() {
                 0,                   // missSBTIndex -- See SBT discussion
                 intersection_test_num,
                 hit_num,
-                ray_id
+                ray_id,
+                op
                 );
     }
 #if DEBUG_INFO == 1
@@ -175,31 +216,33 @@ extern "C" __global__ void __raygen__rg_hybrid_radius_sphere() {
 #endif
 }
 
-// extern "C" __global__ void __intersection__cube() {
-//     unsigned primIdx = optixGetPrimitiveIndex();
-//     unsigned ray_id  = optixGetPayload_2();
-//     unsigned op      = optixGetPayload_3();
-// #if DEBUG_INFO == 1
-//     optixSetPayload_0(optixGetPayload_0() + 1);
-// #endif
-//     const DATA_TYPE_3 point    = params.out[primIdx];
-//     const DATA_TYPE_3 ray_orig = params.window[ray_id];
-//     DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
-//     DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
-//     if (sqdist < params.radius2) {
-//         if (op == 0) {
-//             atomicSub(params.nn + ray_id, 1);
-//         } else if (op == 1) {
-//             atomicAdd(params.nn + ray_id, 1);
-//             if (ray_id < params.stride_left || ray_id >= params.stride_right) {
-//                 atomicAdd(params.nn + params.stride_left + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
-//             }
-//         }
-//     }
-// #if DEBUG_INFO == 1
-//     optixSetPayload_1(optixGetPayload_1() + 1);
-// #endif
-// }
+extern "C" __global__ void __intersection__cube_naive() {
+    unsigned primIdx = optixGetPrimitiveIndex();
+    unsigned ray_id  = optixGetPayload_2();
+#if DEBUG_INFO == 1
+    optixSetPayload_0(optixGetPayload_0() + 1);
+#endif
+
+    const DATA_TYPE_3 point    = params.window[primIdx];
+    const DATA_TYPE_3 ray_orig = params.out[ray_id];
+    DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
+    DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
+    if (sqdist < params.radius2) {
+        if (params.operation == 0) {
+            atomicSub(params.nn + primIdx, 1);
+        } else if (params.operation == 1) {
+            if (primIdx >= params.stride_left && primIdx < params.stride_right) {
+                atomicAdd(params.nn + primIdx, 1);
+            } else {
+                atomicAdd(params.nn + primIdx, 1);
+                atomicAdd(params.nn + params.stride_left + ray_id, 1);
+            }
+        }
+    }
+#if DEBUG_INFO == 1
+    optixSetPayload_1(optixGetPayload_1() + 1);
+#endif
+}
 
 extern "C" __global__ void __intersection__cube_grid() {
     unsigned primIdx = optixGetPrimitiveIndex();
@@ -300,7 +343,7 @@ extern "C" __global__ void __raygen__cluster() {
 #endif
 }
 
-extern "C" __global__ void __intersection__grid() {
+extern "C" __global__ void __intersection__cluster() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
     if (params.label[primIdx] == 0 && primIdx > ray_id) return; // 是 core 且 id 靠后，则直接退出 => 减少距离计算次数
@@ -308,7 +351,7 @@ extern "C" __global__ void __intersection__grid() {
     // 先判别是否已经属于同一个 cluster，prune，减少距离计算
     int ray_rep = find_repres(ray_id, params.cluster_id);
     int prim_rep = find_repres(primIdx, params.cluster_id);
-    if (ray_rep == prim_rep) return;
+    if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
 
     const DATA_TYPE_3 ray_orig = params.window[ray_id];
     const DATA_TYPE_3 point    = params.window[primIdx];

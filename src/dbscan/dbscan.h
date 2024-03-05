@@ -4,11 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-#define MODE 0
-// #define OPTIMIZATION_GRID
-// #define OPTIMIZATION_BVH
-// #define OPTIMIZATION_HETEROGENEOUS
-#define OPTIMIZATION_LEVEL 1
+#define OPTIMIZATION_LEVEL 2
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;

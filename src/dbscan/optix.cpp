@@ -118,7 +118,7 @@ void make_gas(ScanState &state) {
                 gas_buffer_sizes.tempSizeInBytes,
                 state.d_gas_output_buffer,
                 gas_buffer_sizes.outputSizeInBytes,
-                &state.gas_handle,
+                &state.params.handle,
                 nullptr,
                 0
         ));
@@ -210,6 +210,44 @@ void make_gas_for_each_stride(ScanState &state, int unit_num) {
                compactedSizeOffset + 8));
 }
 
+void rebuild_gas(ScanState &state, int update_pos) {
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    // update aabb
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    kGenAABB(state.params.window + update_pos * state.stride_size,
+             state.radius,
+             state.stride_size,
+             d_aabb + update_pos * state.stride_size);
+
+    // recompute gas_buffer_sizes
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &state.vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &state.vertex_input,
+                1, // num build inputs
+                state.d_gas_temp_buffer,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &state.params.handle,
+                nullptr,
+                0
+        ));
+    CUDA_SYNC_CHECK();
+}
+
 void rebuild_gas(ScanState &state) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
@@ -238,7 +276,7 @@ void rebuild_gas(ScanState &state) {
                 gas_buffer_sizes.tempSizeInBytes,
                 state.d_gas_output_buffer,
                 gas_buffer_sizes.outputSizeInBytes,
-                &state.gas_handle,
+                &state.params.handle,
                 nullptr,
                 0
         ));
@@ -349,7 +387,7 @@ void make_gas_by_cell_grid(ScanState &state) {
                 gas_buffer_sizes.tempSizeInBytes,
                 state.d_gas_output_buffer,
                 gas_buffer_sizes.outputSizeInBytes,
-                &state.gas_handle,
+                &state.params.handle,
                 nullptr,
                 0
         ));
@@ -451,6 +489,8 @@ void make_program_groups(ScanState &state) {
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_grid";
+#elif OPTIMIZATION_LEVEL == 0
+    raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_naive";
 #endif
     size_t sizeof_log = sizeof(log);
     OPTIX_CHECK_LOG(optixProgramGroupCreate(
@@ -483,6 +523,8 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_grid";
+#elif OPTIMIZATION_LEVEL == 0
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_naive";
 #endif
     // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
     // hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__terminate_ray";
@@ -515,8 +557,8 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 3
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
-#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
-    hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";
 #endif
     // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
     // hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__terminate_ray";
