@@ -138,6 +138,8 @@ void initialize_params(ScanState &state) {
     state.h_ray_intersections = (unsigned *) malloc(state.query_num * sizeof(unsigned));
     state.h_ray_hits = (unsigned *) malloc(state.query_num * sizeof(unsigned));
 #endif
+    CUDA_CHECK(cudaMalloc(&state.params.cluster_ray_intersections, sizeof(unsigned)));
+    CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
 
     size_t used;
     stop_gpu_mem(&start, &used);
@@ -346,6 +348,8 @@ void search_naive(ScanState &state, bool timing) {
     state.h_label = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    unsigned long cluster_ray_intersections = 0;
+    CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
 
@@ -406,11 +410,17 @@ void search_naive(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
 
+        unsigned is;
+        CUDA_CHECK(cudaMemcpy(&is, state.params.cluster_ray_intersections, sizeof(unsigned), cudaMemcpyDeviceToHost));
+        cluster_ray_intersections += is;
+        CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
+
         if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
 
         // printf("[Step] Finish window %d\n", window_left / state.stride_size);
     }
     printf("[Step] Finish sliding the window...\n");
+    printf("[Debug] cluster_ray_intersections=%lu\n", cluster_ray_intersections);
 }
 
 void search_with_find_cores(ScanState &state, bool timing) {
@@ -510,6 +520,7 @@ void search_with_find_cores(ScanState &state, bool timing) {
     printf("[Step] Finish sliding the window...\n");
 }
 
+// ! `early_cluster` is useless
 void search_with_grid(ScanState &state, bool timing) {
     int remaining_data_num  = state.data_num - state.window_size;
     int unit_num            = state.window_size / state.stride_size;
@@ -540,6 +551,8 @@ void search_with_grid(ScanState &state, bool timing) {
     // * Start sliding
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    unsigned long cluster_ray_intersections = 0;
+    CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
         
@@ -636,11 +649,17 @@ void search_with_grid(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
+        unsigned is;
+        CUDA_CHECK(cudaMemcpy(&is, state.params.cluster_ray_intersections, sizeof(unsigned), cudaMemcpyDeviceToHost));
+        cluster_ray_intersections += is;
+        CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
+
         if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
 
         // printf("[Step] Finish window %d\n", window_left / state.stride_size);
     }
     printf("[Step] Finish sliding the window...\n");
+    printf("[Debug] cluster_ray_intersections=%lu\n", cluster_ray_intersections);
 }
 
 void search(ScanState &state, bool timing) {
@@ -698,6 +717,7 @@ void search(ScanState &state, bool timing) {
         make_gas_by_cell(state);
         timer.stopTimer(&timer.build_hybrid_bvh);
 
+        // ! useless
         timer.startTimer(&timer.early_cluster);
         early_cluster(state);
         timer.stopTimer(&timer.early_cluster);

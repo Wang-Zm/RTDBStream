@@ -341,6 +341,7 @@ extern "C" __global__ void __raygen__cluster() {
     atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
     atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
 #endif
+    atomicAdd(params.cluster_ray_intersections, intersection_test_num);
 }
 
 extern "C" __global__ void __intersection__cluster() {
@@ -352,6 +353,8 @@ extern "C" __global__ void __intersection__cluster() {
     int ray_rep = find_repres(ray_id, params.cluster_id);
     int prim_rep = find_repres(primIdx, params.cluster_id);
     if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
+
+    optixSetPayload_0(optixGetPayload_0() + 1);
 
     const DATA_TYPE_3 ray_orig = params.window[ray_id];
     const DATA_TYPE_3 point    = params.window[primIdx];

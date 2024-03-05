@@ -4,7 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-#define OPTIMIZATION_LEVEL 2
+#define OPTIMIZATION_LEVEL 3 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -54,6 +54,7 @@ struct Params {
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
+    unsigned*               cluster_ray_intersections;
 };
 
 
