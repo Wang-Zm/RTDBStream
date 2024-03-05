@@ -208,23 +208,10 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
         int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
         state.cell_point_num[cell_id]++;
         state.cell_points[cell_id].push_back(pos_start + i);
-// #ifdef OPTIMIZATION_BVH
         state.h_point_cell_id[pos_start + i] = cell_id;
-// #endif
     }
-// #ifdef OPTIMIZATION_BVH
-//     CUDA_CHECK(cudaMemcpy(state.params.point_cell_id + update_pos * state.stride_size, 
-//                             state.h_point_cell_id + update_pos * state.stride_size,
-//                             state.stride_size * sizeof(int),
-//                             cudaMemcpyHostToDevice));
-// #endif
 
-    // for (auto &t: state.cell_point_num) { // 耗时太多，不如直接进行计算，这样效果太差了
-    //     if (int(t.second) >= state.min_pts) {
-    //         CUDA_CHECK(cudaMallocHost(&state.cell_points_ptr[t.first], t.second * sizeof(int))); // 最后要 free 掉
-    //         memcpy(state.cell_points_ptr[t.first], state.cell_points[t.first].data(), t.second * sizeof(int));
-    //     }
-    // }
+    // printf("cell_num=%d\n", state.cell_point_num.size());
 }
 
 void get_centers_radii_device(ScanState &state) {
@@ -236,7 +223,6 @@ void get_centers_radii_device(ScanState &state) {
     unordered_map<int, int> &cell_repres = state.cell_repres;
     cell_repres.clear();
     vector<int> cell_sphere_num_list, cell_id_list;
-    // printf("cell_num=%d\n", state.cell_point_num.size());
     for (int i = 0; i < state.window_size; i++) {
         int cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
         if (state.cell_point_num[cell_id] >= state.min_pts) {
@@ -775,53 +761,6 @@ void search(ScanState &state, bool timing) {
     printf("[Step] Finish sliding the window...\n");
 }
 
-// void result_d2h(ScanState &state) { // https://www.cnblogs.com/ybqjymy/p/17462877.html
-//     timer.startTimer(&timer.copy_results_d2h);
-//     for (int i = 0; i < state.query_num; i++) {
-//         CUDA_CHECK(cudaMemcpy(state.h_dist[i], state.h_dist_temp[i], state.data_num * sizeof(DIST_TYPE), cudaMemcpyDeviceToHost));
-//     }
-//     long total_neighbor_num = 0;
-//     for (int i = 0; i < state.query_num; i++) {
-//         int neighbor_num = 0;
-//         for (int j = 0; j < state.data_num; j++) {
-//             // TODO: 只会计算到query R内的point的距离，超出的不计算，一开始dist仍然是0；可能之后的一些维度的和<R，会导致求解的邻居多余实际邻居数
-//             if (state.h_dist[i][j] > 0 && state.h_dist[i][j] < state.params.radius2) {
-//                 neighbor_num++;
-//                 state.queries_neighbors[i].push_back(j);
-//                 state.queries_neighbor_dist[i].push_back(state.h_dist[i][j]);
-//             }
-//         }
-//         state.queries_neighbor_num[i] = neighbor_num;
-//         total_neighbor_num += neighbor_num;
-//     }
-//     timer.stopTimer(&timer.copy_results_d2h);
-
-//     std::cout << "Total number of neighbors:     " << total_neighbor_num << std::endl;
-//     std::cout << "Ratio of returned data points: " << 1.0 * total_neighbor_num / (state.query_num * state.data_num) * 100 << "%" << std::endl;
-//     // for (int i = 0; i < state.query_num; i++) {
-//     //     std::cout << "Query[" << i << "]: " << state.queries_neighbor_num[i] << std::endl;
-//     // }
-
-// #if DEBUG_INFO == 1
-//     CUDA_CHECK(cudaMemcpy(state.h_ray_intersections, state.params.ray_intersections, state.query_num * sizeof(unsigned), cudaMemcpyDeviceToHost));
-//     CUDA_CHECK(cudaMemcpy(state.h_ray_hits, state.params.ray_primitive_hits, state.query_num * sizeof(unsigned), cudaMemcpyDeviceToHost));
-//     long total_hits = 0, total_intersection_tests = 0;
-//     for (int i = 0; i < state.query_num; i++) {
-//         total_hits += state.h_ray_hits[i];
-//         total_intersection_tests += state.h_ray_intersections[i];
-//     }
-//     std::cout << "Total hits:               " << total_hits << std::endl;
-//     std::cout << "Total intersection tests: " << total_intersection_tests << std::endl;
-
-//     long effective_write_num = total_neighbor_num * ((state.dim + 3 - 1) / 3);
-//     long ineffective_write_num = total_hits - effective_write_num;
-//     std::cout << "Effective write count:   " << effective_write_num << std::endl;
-//     std::cout << "Ineffective write count: " << ineffective_write_num << std::endl;
-//     std::cout << fixed << setprecision(0) << "Effective write count per query:   " << 1.0 * effective_write_num / state.query_num << std::endl;
-//     std::cout << fixed << setprecision(0) << "Ineffective write count per query: " << 1.0 * ineffective_write_num / state.query_num << std::endl;
-// #endif
-// }
-
 void cleanup(ScanState &state) {
     // free host memory
     free(state.h_data);
@@ -915,7 +854,6 @@ int main(int argc, char *argv[]) {
     search_naive(state, false);
 #endif
 
-    // result_d2h(state);
     timer.showTime((state.data_num - state.window_size) / state.stride_size);
     cleanup(state);
     return 0;
