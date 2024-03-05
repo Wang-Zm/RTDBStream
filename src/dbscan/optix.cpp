@@ -449,7 +449,7 @@ void make_program_groups(ScanState &state) {
     raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
 #if OPTIMIZATION_LEVEL == 3
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_hybrid_radius_sphere";
-#elif OPTIMIZATION_LEVEL == 2
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_grid";
 #endif
     size_t sizeof_log = sizeof(log);
@@ -481,7 +481,7 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 3
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_hybrid_radius_sphere";
-#elif OPTIMIZATION_LEVEL == 2
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_grid";
 #endif
     // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
@@ -515,7 +515,7 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 3
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
-#elif OPTIMIZATION_LEVEL == 2
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
 #endif
     // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;

@@ -8,7 +8,7 @@
 // #define OPTIMIZATION_GRID
 // #define OPTIMIZATION_BVH
 // #define OPTIMIZATION_HETEROGENEOUS
-#define OPTIMIZATION_LEVEL 2
+#define OPTIMIZATION_LEVEL 1
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;

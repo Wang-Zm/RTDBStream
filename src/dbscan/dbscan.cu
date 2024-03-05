@@ -169,21 +169,6 @@ extern "C" __global__ void __raygen__rg_hybrid_radius_sphere() {
                ray_id,
                op);
     }
-    // optixTrace(op == 0 ? params.out_stride_handle : params.in_stride_handle,
-    //            ray_origin,
-    //            ray_direction,
-    //            params.tmin,                   // Min intersection distance
-    //            params.tmax,        // Max intersection distance
-    //            0.0f,                   // rayTime -- used for motion blur
-    //            OptixVisibilityMask( 255 ), // Specify always visible
-    //            OPTIX_RAY_FLAG_NONE,
-    //            0,                   // SBT offset   -- See SBT discussion
-    //            1,                   // SBT stride   -- See SBT discussion
-    //            0,                   // missSBTIndex -- See SBT discussion
-    //            intersection_test_num,
-    //            hit_num,
-    //            ray_id,
-    //            op);
 #if DEBUG_INFO == 1
     atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
     atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
