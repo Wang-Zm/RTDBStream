@@ -45,6 +45,10 @@ class Timer{
   double cell_points_memcpy;
   double get_dense_sphere;
 
+  double update_h_point_cell_id;
+  double sort_h_point_cell_id;
+  double get_centers_radii;
+
   Timer() {
     struct timeval t1;                           
     gettimeofday(&t1, NULL);
@@ -85,6 +89,10 @@ class Timer{
     dense_cell_points_copy = 0;
     cell_points_memcpy = 0;
     get_dense_sphere = 0;
+
+    update_h_point_cell_id = 0;
+    sort_h_point_cell_id = 0;
+    get_centers_radii = 0;
   }
   
   // void commonGetStartTime(int timeId) {
@@ -162,6 +170,10 @@ class Timer{
     cout << "[Time] get_dense_sphere: " << get_dense_sphere / query_num << " ms" << endl;
     cout << "[Time] dense_cell_points_copy: " << dense_cell_points_copy / query_num << " ms" << endl;
     cout << "[Time] cell_points_memcpy: " << cell_points_memcpy / query_num << " ms" << endl;
+
+    cout << "[Time] update_h_point_cell_id: " << update_h_point_cell_id / query_num << " ms" << endl;
+    cout << "[Time] sort_h_point_cell_id: " << sort_h_point_cell_id / query_num << " ms" << endl;
+    cout << "[Time] get_centers_radii: " << get_centers_radii / query_num << " ms" << endl;
 
     cout << "##############################" << endl;
     cout << endl;

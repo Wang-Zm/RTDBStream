@@ -4,7 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-#define OPTIMIZATION_LEVEL 3 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 4 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -51,6 +51,7 @@ struct Params {
     int**                   cell_points; // 仅存放第一层即可
     int*                    cell_point_num;
     int*                    points_in_dense_cells;
+    int*                    pos_arr;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;

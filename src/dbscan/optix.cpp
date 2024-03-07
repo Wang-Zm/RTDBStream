@@ -485,7 +485,7 @@ void make_program_groups(ScanState &state) {
     OptixProgramGroupDesc raygen_prog_group_desc = {};
     raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
-#if OPTIMIZATION_LEVEL == 3
+#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg_grid";
@@ -519,7 +519,7 @@ void make_program_groups(ScanState &state) {
     OptixProgramGroupDesc hitgroup_prog_group_desc = {};
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
-#if OPTIMIZATION_LEVEL == 3
+#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_grid";
@@ -555,7 +555,7 @@ void make_program_groups(ScanState &state) {
 
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
-#if OPTIMIZATION_LEVEL == 3
+#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";
