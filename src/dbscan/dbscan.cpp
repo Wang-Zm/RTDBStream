@@ -180,11 +180,11 @@ void find_neighbors_cores(ScanState &state, int update_pos) {
     state.params.stride_right = state.params.stride_left + state.stride_size;
     memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
 
-    CUDA_CHECK(cudaMemcpyAsync(state.params.out_stride, state.params.out, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToDevice));
-    CUDA_CHECK(cudaMemcpyAsync(state.params.out, state.h_window + update_pos * state.stride_size, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemsetAsync(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
+    CUDA_CHECK(cudaMemcpy(state.params.out_stride, state.params.out, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.out, state.h_window + update_pos * state.stride_size, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
     rebuild_gas_stride(state, update_pos);
-    CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice)); // ? 可以为 params 申请一个 pinned memory
+    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice)); // ? 可以为 params 申请一个 pinned memory
     // ! 这里的 cudaMemcpy 会让上方的异步操作停下，但是对 state.d_params 使用异步 cudaMemcpy 也没有报错
     OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 2, 1));
     
@@ -483,8 +483,8 @@ void search_naive(ScanState &state, bool timing) {
     printf("[Step] Initialize the first window - get NN...\n");
 
     // * Start sliding
-    state.h_label = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     unsigned long cluster_ray_intersections = 0;
     CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
@@ -553,6 +553,7 @@ void search_naive(ScanState &state, bool timing) {
         cluster_ray_intersections += is;
         CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
 
+        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
 
         // printf("[Step] Finish window %d\n", window_left / state.stride_size);
@@ -561,7 +562,7 @@ void search_naive(ScanState &state, bool timing) {
     printf("[Debug] cluster_ray_intersections=%lu\n", cluster_ray_intersections);
 }
 
-void search_with_find_cores(ScanState &state, bool timing) {
+void search_identify_cores(ScanState &state, bool timing) {
     int remaining_data_num  = state.data_num - state.window_size;
     int unit_num            = state.window_size / state.stride_size;
     int update_pos          = 0;
@@ -572,59 +573,42 @@ void search_with_find_cores(ScanState &state, bool timing) {
 
     log_common_info(state);
 
+    // * 设置 buffer 数组
+    state.d_gas_temp_buffer_list   = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
+    state.d_gas_output_buffer_list = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
+    state.handle_list              = (OptixTraversableHandle*) malloc(unit_num * sizeof(OptixTraversableHandle));
+
     // * Initialize the first window
     CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    make_gas(state);
-    printf("[Step] Initialize the first window - build BVH tree...\n");
+    make_gas_for_each_stride(state, unit_num);
+    
     CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
     find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
     CUDA_SYNC_CHECK();
-    printf("[Step] Initialize the first window - get NN...\n");
 
     // * Start sliding
-    state.h_label = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
-        
-        state.params.out = state.params.window + update_pos * state.stride_size;
-        timer.startTimer(&timer.out_stride_bvh);
-        rebuild_gas_stride(state, update_pos, state.out_stride_gas_handle);
-        timer.stopTimer(&timer.out_stride_bvh);
-        timer.startTimer(&timer.out_stride_ray);
-        state.params.operation = 0; // nn--
-        state.params.out_stride_handle = state.out_stride_gas_handle;
-        state.params.stride_left = update_pos * state.stride_size;
-        state.params.stride_right = state.params.stride_left + state.stride_size;
-        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
-        CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.out_stride_ray);
-
-        timer.startTimer(&timer.in_stride_bvh);
-        CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
-        rebuild_gas_stride(state, update_pos, state.in_stride_gas_handle);
-        timer.stopTimer(&timer.in_stride_bvh);
-        timer.startTimer(&timer.in_stride_ray);
-        state.params.operation = 1; // nn++
-        state.params.in_stride_handle = state.in_stride_gas_handle;
-        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
-        CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.in_stride_ray);
 
         timer.startTimer(&timer.find_cores);
-        find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts);
-        CUDA_SYNC_CHECK();
+        find_neighbors_cores(state, update_pos);
         timer.stopTimer(&timer.find_cores);
 
         timer.startTimer(&timer.whole_bvh);
-        rebuild_gas(state);
+        rebuild_gas(state); // 不再更新aabb，因为rebuild_gas已经更新好
         timer.stopTimer(&timer.whole_bvh);
+        // 改成构建整个BVH tree，仍然使用整个aabb list构建
+        // rebuild_gas_whole_identify_cores(state);
+
+        CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        // printf("window_id=%d, before, h_label[%d]=%d, h_cluster_id[%d]=%d\n", stride_num + 1, 836, state.h_label[836], 836, state.h_cluster_id[836]);
 
         timer.startTimer(&timer.set_cluster_id);
+        state.params.window_id = stride_num + 1;
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         // 从 core 发射光线：1）只与小的 core 进行相交测试，若遇到 core，则向 idx 小的 core 聚类 2）若遇到 border，且 border 的 cid 已经设置过，则直接跳过；否则使用原子操作设置该 border
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
@@ -635,11 +619,16 @@ void search_with_find_cores(ScanState &state, bool timing) {
         // * serial union-find
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        // printf("window_id=%d, after, h_label[%d]=%d, h_cluster_id[%d]=%d\n", stride_num + 1, 836, state.h_label[836], 836, state.h_cluster_id[836]);
         for (int i = 0; i < state.window_size; i++) {
             if (state.h_label[i] == 2) continue;
             find(i, state.h_cluster_id);
         }
         timer.stopTimer(&timer.union_cluster_id);
+
+        swap(state.d_gas_temp_buffer_list[update_pos], state.d_gas_temp_buffer);
+        swap(state.d_gas_output_buffer_list[update_pos], state.d_gas_output_buffer);
+        state.handle_list[update_pos] = state.params.in_stride_handle;
 
         stride_num++;
         remaining_data_num  -= state.stride_size;
@@ -729,7 +718,7 @@ void search_with_grid(ScanState &state, bool timing) {
         timer.startTimer(&timer.early_cluster);
         for (int i = window_left; i < window_left + state.stride_size; i++) {
             int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // get_cell_id 方法需要改造一下
-            state.cell_point_num.erase(cell_id);
+            state.cell_point_num.erase(cell_id); // TODO: state.cell_point_num[cell_id]--，不应该直接删除该item
         }
         for (int i = window_right; i < window_right + state.stride_size; i++) {
             int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
@@ -1005,7 +994,7 @@ int main(int argc, char *argv[]) {
 #elif OPTIMIZATION_LEVEL == 2
     search_with_grid(state, true);
 #elif OPTIMIZATION_LEVEL == 1
-    search_with_find_cores(state, true);
+    search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
     search_naive(state, true);
 #endif
@@ -1016,11 +1005,11 @@ int main(int argc, char *argv[]) {
     state.cell_repres.clear();
     // Timing
 #if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
-    search(state, true);
+    search(state, false);
 #elif OPTIMIZATION_LEVEL == 2
     search_with_grid(state, false);
 #elif OPTIMIZATION_LEVEL == 1
-    search_with_find_cores(state, false);
+    search_identify_cores(state, false);
 #elif OPTIMIZATION_LEVEL == 0
     search_naive(state, false);
 #endif

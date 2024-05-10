@@ -4,7 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-#define OPTIMIZATION_LEVEL 4 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 1 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -31,6 +31,7 @@ struct Params {
     int                     window_size;
     int                     stride_left;
     int                     stride_right;
+    int                     window_id;
 
     DATA_TYPE*              min_value;
     int*                    cell_count;

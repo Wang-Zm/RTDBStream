@@ -353,9 +353,10 @@ bool check(ScanState &state, int window_id, Timer &timer) {
                         i, nn[i], i, check_nn[i]);
                 return false;
             }
-        } else if (label[i] == 1) {
+        } else if (label[i] == 1) { // border可能属于不同的cluster
             DATA_TYPE_3 p = state.h_window[i];
             bool is_correct = false;
+            // int t = -1;
             for (int j = 0; j < state.window_size; j++) {
                 if (j == i) continue;
                 DATA_TYPE_3 O = {p.x - state.h_window[j].x, p.y - state.h_window[j].y, p.z - state.h_window[j].z};
@@ -363,10 +364,18 @@ bool check(ScanState &state, int window_id, Timer &timer) {
                 if (d < state.params.radius2) {
                     if (cid[j] == cid[i]) { // 验证成功
                         is_correct = true;
+                        // t = j;
                         break;
                     }
                 }
             }
+            // if (i == 836) {
+            //     printf("cid[%d]=%d, check_cid[%d]=%d, t=%d\n", i, cid[i], i, check_cid[i], t);
+            //     DATA_TYPE_3 O = {p.x - state.h_window[t].x, p.y - state.h_window[t].y, p.z - state.h_window[t].z};
+            //     DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+            //     printf("radius2=%lf, d=%lf\n", state.params.radius2, d);
+            //     printf("p={%lf, %lf, %lf}, window[%d]={%lf, %lf, %lf}, window %d\n", p.x, p.y, p.z, t, state.h_window[t].x, state.h_window[t].y, state.h_window[t].z, window_id);
+            // }
             if (!is_correct) { // border 的 label 错误，打印问题
                 printf("Error on window %d: cid[%d] = %d, but border[%d] doesn't have a core belonging to cluster %d\n", 
                         window_id, i, cid[i], i, cid[i]);
