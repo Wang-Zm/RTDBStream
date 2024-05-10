@@ -492,6 +492,7 @@ void search_naive(ScanState &state, bool timing) {
         timer.startTimer(&timer.total);
 
         state.params.out = state.params.window + update_pos * state.stride_size;
+        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         // out stride
         timer.startTimer(&timer.out_stride_ray);
         state.params.operation = 0; // nn--
@@ -553,7 +554,6 @@ void search_naive(ScanState &state, bool timing) {
         cluster_ray_intersections += is;
         CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
 
-        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
 
         // printf("[Step] Finish window %d\n", window_left / state.stride_size);
