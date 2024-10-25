@@ -374,3 +374,63 @@ extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3
 // 		pHashTable
 // 	);
 // }
+
+/**
+ * 已有信息：
+ * window 窗口中的点
+ * radius 半径
+ * pos_arr 原始的 pos_arr
+ * uniq_pos_arr 合并大球后的每个球的中心在 pos_arr 的 offset
+ * num_points 每个点对应的球中的点数，用来确认大球还是小球
+ * min_pts 邻居阈值
+ * min_val 数据空间范围最小值
+ * cell_length cell 的边长
+ * num_centers center 的个数
+ * 设置信息：
+ * centors 球的中心
+ * radii 球的半径
+ * cluster_id 窗口中每个点的 cluster id 的设置
+ * cell_points 每个大球对应的点的起始位置
+ * center_idx_in_window 每个 center 在窗口中的位置，便于光追过程中的聚类；这个似乎可以通过 uniq_pos_arr 获取到，其实就是 i
+ * 阶段：
+ * 1.只使用全局内存实现功能
+ */
+__global__ void set_centers_radii_t(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
+								    DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_centers) {
+		return;
+	}
+	int offset = uniq_pos_arr[idx];
+	int i = pos_arr[offset]; // 在 window 中的位置
+	if (num_points[idx] < min_pts) {
+		centers[idx] = window[i];
+		radii[idx] = radius;
+		center_idx_in_window[idx] = i;
+		cluster_id[i] = i;
+	} else {
+		int dim_id_x = (window[i].x - min_value[0]) / cell_length;
+		int dim_id_y = (window[i].y - min_value[1]) / cell_length;
+		int dim_id_z = (window[i].z - min_value[2]) / cell_length;
+		DATA_TYPE_3 center = { min_value[0] + (dim_id_x + 0.5) * cell_length, 
+							   min_value[1] + (dim_id_y + 0.5) * cell_length, 
+							   min_value[2] + (dim_id_z + 0.5) * cell_length };
+	    centers[idx] = center;
+		radii[idx] = 1.5 * radius;
+		cell_points[idx] = pos_arr + offset;
+		center_idx_in_window[idx] = i;
+		for (int t = 0; t < num_points[idx]; t++) {
+			cluster_id[pos_arr[offset + t]] = i;
+		}
+	}
+}
+
+extern "C" void set_centers_radii(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
+								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window) {
+	int block = 256;
+	int grid = (num_centers + block - 1) / block;
+	set_centers_radii_t <<<grid, block>>> (
+		window, radius, pos_arr, uniq_pos_arr, num_points, min_pts, min_value, cell_length, num_centers,
+		centers, radii, cluster_id, cell_points, center_idx_in_window
+	);
+}

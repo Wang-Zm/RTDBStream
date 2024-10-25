@@ -399,7 +399,7 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
 
-    // 判断是 prim 是 cell-sphere 还是 point-sphere
+    // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
     if (params.radii[primIdx] == params.radius) { // point-sphere
         // 先判别是否已经是同一 cluster
         int prim_idx_in_window = params.center_idx_in_window[primIdx];

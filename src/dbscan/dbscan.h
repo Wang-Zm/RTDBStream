@@ -4,7 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-#define OPTIMIZATION_LEVEL 1 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 4 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -57,6 +57,12 @@ struct Params {
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
     unsigned*               cluster_ray_intersections;
+
+    DATA_TYPE_3*            c_centers;
+    DATA_TYPE*              c_radii;
+    int*                    c_cluster_id;
+    int**                   c_cell_points;
+    int*                    c_center_idx_in_window;
 };
 
 
@@ -81,4 +87,6 @@ extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size
 // extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);
 extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
 extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2);
+extern "C" void set_centers_radii(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
+								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window);
 #endif
