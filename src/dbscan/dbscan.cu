@@ -400,7 +400,8 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned ray_id  = optixGetPayload_2();
 
     // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
-    if (params.radii[primIdx] == params.radius) { // point-sphere
+    // if (params.radii[primIdx] == params.radius) { // point-sphere
+    if (params.cell_point_num[primIdx] < params.min_pts) { // point-sphere
         // 先判别是否已经是同一 cluster
         int prim_idx_in_window = params.center_idx_in_window[primIdx];
         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
