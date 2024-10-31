@@ -522,13 +522,23 @@ void make_gas_by_cell_grid(ScanState &state) {
     CUDA_SYNC_CHECK();
 }
 
-void make_gas_by_cell(ScanState &state) {
+void make_gas_by_cell(ScanState &state, Timer &timer) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    cudaEventRecord(start);
     kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb);
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, end);
+    timer.build_bvh += milliseconds;
+
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
 

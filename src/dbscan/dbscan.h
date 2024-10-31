@@ -53,16 +53,17 @@ struct Params {
     int*                    cell_point_num;
     int*                    points_in_dense_cells;
     int*                    pos_arr;
+    bool*                   point_status;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
     unsigned*               cluster_ray_intersections;
 
-    DATA_TYPE_3*            c_centers;
-    DATA_TYPE*              c_radii;
-    int*                    c_cluster_id;
-    int**                   c_cell_points;
-    int*                    c_center_idx_in_window;
+    // DATA_TYPE_3*            c_centers;
+    // DATA_TYPE*              c_radii;
+    // int*                    c_cluster_id;
+    // int**                   c_cell_points;
+    // int*                    c_center_idx_in_window;
 };
 
 

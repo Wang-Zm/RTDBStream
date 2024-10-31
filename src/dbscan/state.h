@@ -89,6 +89,8 @@ struct ScanState
     vector<int>                     cell_count;
     int*                            h_point_cell_id;
     unordered_map<int, int>         cell_repres;
+    int*                            uniq_pos_arr;
+    int*                            num_points;
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);
@@ -102,6 +104,8 @@ int find(int x, int* cid);
 void cluster_with_cpu(ScanState &state, Timer &timer);
 void cluster_with_cuda(ScanState &state, Timer &timer);
 bool check(ScanState &state, int window_id, Timer &timer);
+void printUsageAndExit(const char* argv0);
+void parse_args(ScanState &state, int argc, char *argv[]);
 
 void initialize_optix(ScanState &state);
 void make_gas(ScanState &state);
@@ -111,7 +115,7 @@ void rebuild_gas(ScanState &state);
 void rebuild_gas_stride(ScanState &state, int update_pos);
 void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
 void make_gas_by_cell_grid(ScanState &state);
-void make_gas_by_cell(ScanState &state);
+void make_gas_by_cell(ScanState &state, Timer &timer);
 void make_module(ScanState &state);
 void make_program_groups(ScanState &state);
 void make_pipeline(ScanState &state);

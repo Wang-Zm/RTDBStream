@@ -25,64 +25,6 @@ using namespace std;
 
 Timer timer;
 
-void printUsageAndExit(const char* argv0) {
-    std::cerr << "Usage  : " << argv0 << " [options]\n";
-    std::cerr << "Options: --file | -f <filename>      Specify file for data input\n";
-    std::cerr << "         --help | -h                 Print this usage message\n";
-    std::cerr << "         --n <int>                   Set data num; defaults to 1e8\n";
-    std::cerr << "         --primitive <int>           Set primitive type, 0 for cube, 1 for triangle with anyhit; defaults to 0\n";
-    std::cerr << "         --nc                        No Comparison\n";
-    exit(1);
-}
-
-void parse_args(ScanState &state, int argc, char *argv[]) {
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg(argv[i]);
-        if (arg == "--help" || arg == "-h") {
-            printUsageAndExit(argv[0]);
-        } else if (arg == "--file" || arg == "-f") {
-            if (i < argc - 1) {
-                state.data_file = argv[++i];
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else if (arg == "-n") {
-            if (i < argc - 1) {
-                state.data_num = stoi(argv[++i]);
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else if (arg == "--window" || arg == "-W") {
-            if (i < argc - 1) {
-                state.window_size = stoi(argv[++i]);
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else if (arg == "--stride" || arg == "-S") {
-            if (i < argc - 1) {
-                state.stride_size = stoi(argv[++i]);
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else if (arg == "--minPts" || arg == "-K") {
-            if (i < argc - 1) {
-                state.min_pts = stoi(argv[++i]);
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else if (arg == "--radius" || arg == "-R") {
-            if (i < argc - 1) {
-                state.radius = stod(argv[++i]);
-            } else {
-                printUsageAndExit(argv[0]);
-            }
-        } else {
-            std::cerr << "Unknown option '" << arg << "'\n";
-            printUsageAndExit(argv[0]);
-        }
-    }
-}
-
 void initialize_params(ScanState &state) {
     size_t start;
     start_gpu_mem(&start);
@@ -107,8 +49,10 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(&state.params.window, state.window_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(&state.params.out_stride, state.stride_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_params), sizeof(Params)));
-    state.h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    state.h_label = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMallocHost(&state.h_cluster_id, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMallocHost(&state.h_label, state.window_size * sizeof(int)));
+    // state.h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
+    // state.h_label = (int*) malloc(state.window_size * sizeof(int));
 
     CUDA_CHECK(cudaMalloc(&state.params.centers, state.window_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(&state.params.radii, state.window_size * sizeof(DATA_TYPE)));
@@ -122,11 +66,16 @@ void initialize_params(ScanState &state) {
     state.d_cell_points = (int**) malloc(state.window_size * sizeof(int*));
     for (int i = 0; i < state.window_size; i++) state.d_cell_points[i] = nullptr;
     state.points_in_dense_cells = (int*) malloc(state.window_size * sizeof(int));
-    CUDA_CHECK(cudaMalloc(&state.params.pos_arr, state.window_size * sizeof(int)));
-    state.pos_arr = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&state.params.pos_arr, 2 * state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.point_status, state.window_size * sizeof(bool)));
+    // state.pos_arr = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMallocHost(&state.pos_arr, state.window_size * sizeof(int)));
     state.tmp_pos_arr = (int*) malloc(state.window_size * sizeof(int));
     state.new_pos_arr = (int*) malloc(state.stride_size * sizeof(int));
-
+    // state.uniq_pos_arr = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMallocHost(&state.uniq_pos_arr, state.window_size * sizeof(int)));
+    // state.num_points = (int*) malloc(state.window_size * sizeof(int));
+    CUDA_CHECK(cudaMallocHost(&state.num_points, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&state.params.cell_count, 3 * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(state.params.cell_count, state.cell_count.data(), 3 * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc(&state.params.min_value, 3 * sizeof(DATA_TYPE)));
@@ -143,12 +92,6 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(&state.params.cluster_ray_intersections, sizeof(unsigned)));
     CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
 
-    CUDA_CHECK(cudaMalloc(&state.params.c_centers, state.window_size * sizeof(DATA_TYPE_3)));
-    CUDA_CHECK(cudaMalloc(&state.params.c_radii, state.window_size * sizeof(DATA_TYPE)));
-    CUDA_CHECK(cudaMalloc(&state.params.c_cluster_id, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.c_cell_points, state.window_size * sizeof(int*)));
-    CUDA_CHECK(cudaMalloc(&state.params.c_center_idx_in_window, state.window_size * sizeof(int)));
-
     size_t used;
     stop_gpu_mem(&start, &used);
     std::cout << "[Mem] initialize_params: " << 1.0 * used / (1 << 20) << std::endl;
@@ -162,6 +105,7 @@ void log_common_info(ScanState &state) {
     std::cout << "Cell length: " << state.cell_length << std::endl;
     for (int i = 0; i < 3; i++) std::cout << "Cell count: " << state.cell_count[i] << ", ";
     std::cout << std::endl;
+    std::cout << "OPTIMIZATION_LEVEL: " << OPTIMIZATION_LEVEL << std::endl;
 }
 
 inline int get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
@@ -219,8 +163,6 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
         state.h_point_cell_id[pos_start + i] = cell_id;
     }
 }
-
-int num_centers_global1, num_centers_global2;
 
 void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
     // 3.获取球的球心和半径
@@ -294,42 +236,78 @@ void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
                           cudaMemcpyHostToDevice));
     state.params.center_num = state.h_centers.size();
     timer.stopTimer(&timer.cell_points_memcpy);
-    num_centers_global1 = state.h_centers.size();
 }
 
 void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
     timer.startTimer(&timer.get_centers_radii);
-    int uniq_pos_arr[state.window_size];
-    int num_points[state.window_size];
+    timer.startTimer(&timer.compute_uniq_pos_arr);
+    int *uniq_pos_arr = state.uniq_pos_arr;
+    int *num_points = state.num_points;
+    // bool point_status[state.window_size];
     int num_centers = 0;
     for (int i1 = 0; i1 < state.window_size; i1++) {
         int cell_id = state.h_point_cell_id[pos_arr[i1]];
         int point_num = state.cell_point_num[cell_id];
         uniq_pos_arr[num_centers] = i1;
         num_points[num_centers] = 1;
-        if (point_num >= state.min_pts) { // TODO: 后面考虑把计算 center 的放到后面，不计算 center 的放到前面，减少 warp 发散
+        // point_status[i1] = false;
+        if (point_num >= state.min_pts) { // TODO: 后面考虑把计算 center 的放到后面，不计算 center 的放到前面，减少 warp 发散->效果不大
+            // for (int i2 = i1; i2 < i1 + point_num; i2++) {
+            //     point_status[i2] = true;
+            // }
             i1 += point_num - 1;
             num_points[num_centers] = point_num;
         }
         num_centers++;
     }
 
+    // int i1 = 0;
+    // while (i1 < state.window_size) {
+    //     int cell_id = state.h_point_cell_id[pos_arr[i1]];
+    //     int point_num = state.cell_point_num[cell_id];
+    //     if (point_num >= state.min_pts) {
+    //         uniq_pos_arr[num_centers] = i1;
+    //         num_points[num_centers] = point_num;
+    //         num_centers++;
+    //     } else {
+    //         int t = i1 + point_num;
+    //         for (int i2 = i1; i2 < t; i2++) { // In this way, `cell_id` and `point_num` will not be calculated repeatedly
+    //             uniq_pos_arr[num_centers] = i2;
+    //             num_points[num_centers] = 1;
+    //             num_centers++;
+    //         }
+    //     }
+    //     i1 += point_num;
+    // }
+
+    // Put the centers to be computed in front
+    // int head = 0, tail = num_centers - 1;
+    // while (head < tail) {
+    //     while (head < tail && num_points[head] >= state.min_pts) {
+    //         head++;
+    //     }
+    //     swap(num_points[head], num_points[tail]);
+    //     swap(uniq_pos_arr[head], uniq_pos_arr[tail]);
+    //     while (head < tail && num_points[tail] < state.min_pts) {
+    //         tail--;
+    //     }
+    //     swap(num_points[head], num_points[tail]);
+    //     swap(uniq_pos_arr[head], uniq_pos_arr[tail]);
+    // }
+    timer.stopTimer(&timer.compute_uniq_pos_arr);
+
     state.params.center_num = num_centers;
-    int* d_uniq_pos_arr;
-    CUDA_CHECK(cudaMalloc(&d_uniq_pos_arr, state.params.center_num * sizeof(int)));
-    CUDA_CHECK(cudaMemcpy(d_uniq_pos_arr, uniq_pos_arr, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.pos_arr + state.window_size, uniq_pos_arr, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, num_points, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.pos_arr, pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemcpy(state.params.point_status, point_status, state.window_size * sizeof(bool), cudaMemcpyHostToDevice));
     set_centers_radii(
-        state.params.window, state.params.radius, state.params.pos_arr, d_uniq_pos_arr, state.params.cell_point_num, 
+        state.params.window, state.params.radius, state.params.pos_arr, state.params.pos_arr + state.window_size, state.params.cell_point_num, 
         state.params.min_pts, state.params.min_value, state.params.cell_length, state.params.center_num,
-        // state.params.c_centers, state.params.c_radii, state.params.c_cluster_id, state.params.c_cell_points, state.params.c_center_idx_in_window
         state.params.centers, state.params.radii, state.params.cluster_id, state.params.cell_points, state.params.center_idx_in_window
     );
-    CUDA_CHECK(cudaFree(d_uniq_pos_arr));
     cudaDeviceSynchronize();
     timer.stopTimer(&timer.get_centers_radii);
-    num_centers_global2 = num_centers;
 }
 
 void update_grid_without_vector(ScanState &state, int update_pos, int window_left, int window_right) {    
@@ -352,20 +330,7 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
     int *pos_arr = state.pos_arr;
     int *point_cell_id = state.h_point_cell_id;
 
-    // Strategy 1: std::sort
-    // for (int i = 0; i < state.window_size; i++) pos_arr[i] = i;
-    // sort(pos_arr, pos_arr + state.window_size, 
-    //      [&point_cell_id](size_t i1, size_t i2) { 
-    //         return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
-    //      });
-
-    // Strategy 2: __gnu_parallel::sort 效果不好
-    // __gnu_parallel::sort(pos_arr, pos_arr + state.window_size, 
-    //                     [&point_cell_id](size_t i1, size_t i2) { 
-    //                         return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
-    //                     });
-
-    // Strategy 3: 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
+    // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     int *new_pos_arr = state.new_pos_arr;
     int stride_left = update_pos * state.stride_size;
     for (int i = stride_left; i < stride_left + state.stride_size; i++) {
@@ -409,58 +374,6 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
 
     // set_centers_radii_cpu(state, pos_arr);
     set_centers_radii_gpu(state, pos_arr);
-
-    // TODO: compare CPU's results and GPU's results （中文和英文无所谓，以后尽量用英文）
-    // DATA_TYPE_3 cpu_centers[state.window_size], gpu_centers[state.window_size];
-    // DATA_TYPE cpu_radius[state.window_size], gpu_radius[state.window_size];
-    // int cpu_cid[state.window_size], gpu_cid[state.window_size];
-    // int *cpu_cell_points[state.window_size], *gpu_cell_points[state.window_size];
-    // int cpu_center_idx_in_window[state.window_size], gpu_center_idx_in_window[state.window_size];
-    // CUDA_CHECK(cudaMemcpy(cpu_centers, state.params.centers, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(gpu_centers, state.params.c_centers, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(cpu_radius, state.params.radii, state.window_size * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(gpu_radius, state.params.c_radii, state.window_size * sizeof(DATA_TYPE), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(cpu_cid, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(gpu_cid, state.params.c_cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(cpu_cell_points, state.params.cell_points, state.window_size * sizeof(int*), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(gpu_cell_points, state.params.c_cell_points, state.window_size * sizeof(int*), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(cpu_center_idx_in_window, state.params.center_idx_in_window, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    // CUDA_CHECK(cudaMemcpy(gpu_center_idx_in_window, state.params.c_center_idx_in_window, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-    // if (num_centers_global1 != num_centers_global2) {
-    //     printf("num_centers_global1 = %d, num_centers_global2 = %d\n", num_centers_global1, num_centers_global2);
-    //     return;
-    // }
-    // printf("num_centers = %d\n", num_centers_global1);
-    // for (int t = 0; t < num_centers_global1; t++) {
-    //     // if (cpu_centers[t].x != gpu_centers[t].x || cpu_centers[t].y != gpu_centers[t].y || cpu_centers[t].z != gpu_centers[t].z) {
-    //     //     printf("cpu_centers[%d] = (%lf, %lf, %lf), gpu_centers[%d] = (%lf, %lf, %lf)\n", 
-    //     //             t, cpu_centers[t].x, cpu_centers[t].y, cpu_centers[t].z,
-    //     //             t, cpu_centers[t].x, cpu_centers[t].y, cpu_centers[t].z);
-    //     //     return;
-    //     // }
-    //     if (cpu_radius[t] != gpu_radius[t]) {
-    //         printf("cpu_radius[%d] = %lf, gpu_radius[%d] = %lf\n",
-    //                 t, cpu_radius[t], t, gpu_radius[t]);
-    //         return;
-    //     }
-    //     if (cpu_cell_points[t] != gpu_cell_points[t]) {
-    //         printf("cpu_cell_points[%d] = %d, gpu_cell_points[%d] = %d\n",
-    //                 t, cpu_cell_points[t], t, gpu_cell_points[t]);
-    //         return;
-    //     }
-    // }
-    // for (int t = 0; t < state.window_size; t++) {
-    //     if (cpu_cid[t] != gpu_cid[t]) {
-    //         printf("cpu_cid[%d] = %d, gpu_cid[%d] = %d\n",
-    //                 t, cpu_cid[t], t, gpu_cid[t]);
-    //         return;
-    //     }
-    //     if (cpu_center_idx_in_window[t] != gpu_center_idx_in_window[t]) {
-    //         printf("cpu_center_idx_in_window[%d] = %d, gpu_center_idx_in_window[%d] = %d\n",
-    //                 t, cpu_center_idx_in_window[t], t, gpu_center_idx_in_window[t]);
-    //         return;
-    //     }
-    // }
 }
 
 void get_centers_radii_device(ScanState &state) {
@@ -952,7 +865,7 @@ void search(ScanState &state, bool timing) {
 #endif
 
         timer.startTimer(&timer.build_hybrid_bvh);
-        make_gas_by_cell(state);
+        make_gas_by_cell(state, timer);
         timer.stopTimer(&timer.build_hybrid_bvh);
 
 #if OPTIMIZATION_LEVEL == 3
@@ -965,7 +878,7 @@ void search(ScanState &state, bool timing) {
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
-        timer.stopTimer(&timer.set_cluster_id);
+        timer.stopTimer(&timer.set_cluster_id); // TODO: Change to use `Event` to record time
 
         timer.startTimer(&timer.union_cluster_id);
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
@@ -1007,7 +920,7 @@ void search(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
-        if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
+        // if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
 
         // printf("[Step] Finish window %d\n", stride_num);
     }
@@ -1017,14 +930,21 @@ void search(ScanState &state, bool timing) {
 void cleanup(ScanState &state) {
     // free host memory
     free(state.h_data);
-    free(state.h_label);
-    free(state.h_cluster_id);
+    // free(state.h_label);
+    // free(state.h_cluster_id);
+    CUDA_CHECK(cudaFreeHost(state.h_label));
+    CUDA_CHECK(cudaFreeHost(state.h_cluster_id));
     CUDA_CHECK(cudaFreeHost(state.h_window));
     free(state.h_point_cell_id);
     free(state.d_cell_points);
-    free(state.pos_arr);
+    // free(state.pos_arr);
+    CUDA_CHECK(cudaFreeHost(state.pos_arr));
     free(state.tmp_pos_arr);
     free(state.new_pos_arr);
+    // free(state.uniq_pos_arr);
+    CUDA_CHECK(cudaFreeHost(state.uniq_pos_arr));
+    // free(state.num_points);
+    CUDA_CHECK(cudaFreeHost(state.num_points));
 #if OPTIMIZATION_LEVEL == 3
     free(state.d_gas_temp_buffer_list); // TODO: free 其中的每一项
     free(state.d_gas_output_buffer_list);
@@ -1051,6 +971,7 @@ void cleanup(ScanState &state) {
     CUDA_CHECK(cudaFree(state.params.point_cell_id));
     CUDA_CHECK(cudaFree(state.params.out_stride));
     CUDA_CHECK(cudaFree(state.params.pos_arr));
+    CUDA_CHECK(cudaFree(state.params.point_status));
 
 #if DEBUG_INFO == 1
     CUDA_CHECK(cudaFree(state.params.ray_primitive_hits));

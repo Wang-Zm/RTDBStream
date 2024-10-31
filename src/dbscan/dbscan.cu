@@ -341,7 +341,7 @@ extern "C" __global__ void __raygen__cluster() {
     atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
     atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
 #endif
-    atomicAdd(params.cluster_ray_intersections, intersection_test_num);
+    // atomicAdd(params.cluster_ray_intersections, intersection_test_num);
 }
 
 extern "C" __global__ void __intersection__cluster() {
@@ -400,7 +400,6 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned ray_id  = optixGetPayload_2();
 
     // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
-    // if (params.radii[primIdx] == params.radius) { // point-sphere
     if (params.cell_point_num[primIdx] < params.min_pts) { // point-sphere
         // 先判别是否已经是同一 cluster
         int prim_idx_in_window = params.center_idx_in_window[primIdx];

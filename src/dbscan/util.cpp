@@ -380,3 +380,61 @@ bool check(ScanState &state, int window_id, Timer &timer) {
     free(state.h_nn);
     return true;
 }
+
+void printUsageAndExit(const char* argv0) {
+    std::cerr << "Usage  : " << argv0 << " [options]\n";
+    std::cerr << "Options: --file | -f <filename>      Specify file for data input\n";
+    std::cerr << "         --help | -h                 Print this usage message\n";
+    std::cerr << "         --n <int>                   Set data num; defaults to 1e8\n";
+    std::cerr << "         --primitive <int>           Set primitive type, 0 for cube, 1 for triangle with anyhit; defaults to 0\n";
+    std::cerr << "         --nc                        No Comparison\n";
+    exit(1);
+}
+
+void parse_args(ScanState &state, int argc, char *argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg(argv[i]);
+        if (arg == "--help" || arg == "-h") {
+            printUsageAndExit(argv[0]);
+        } else if (arg == "--file" || arg == "-f") {
+            if (i < argc - 1) {
+                state.data_file = argv[++i];
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else if (arg == "-n") {
+            if (i < argc - 1) {
+                state.data_num = stoi(argv[++i]);
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else if (arg == "--window" || arg == "-W") {
+            if (i < argc - 1) {
+                state.window_size = stoi(argv[++i]);
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else if (arg == "--stride" || arg == "-S") {
+            if (i < argc - 1) {
+                state.stride_size = stoi(argv[++i]);
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else if (arg == "--minPts" || arg == "-K") {
+            if (i < argc - 1) {
+                state.min_pts = stoi(argv[++i]);
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else if (arg == "--radius" || arg == "-R") {
+            if (i < argc - 1) {
+                state.radius = stod(argv[++i]);
+            } else {
+                printUsageAndExit(argv[0]);
+            }
+        } else {
+            std::cerr << "Unknown option '" << arg << "'\n";
+            printUsageAndExit(argv[0]);
+        }
+    }
+}

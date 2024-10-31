@@ -48,6 +48,7 @@ class Timer{
   double update_h_point_cell_id;
   double sort_h_point_cell_id;
   double get_centers_radii;
+  double compute_uniq_pos_arr;
 
   Timer() {
     struct timeval t1;                           
@@ -93,21 +94,8 @@ class Timer{
     update_h_point_cell_id = 0;
     sort_h_point_cell_id = 0;
     get_centers_radii = 0;
+    compute_uniq_pos_arr = 0;
   }
-  
-  // void commonGetStartTime(int timeId) {
-  //   struct timeval t1;                           
-  //   gettimeofday(&t1, NULL);
-  //   lock_guard<mutex> lock(timeMutex[timeId]);
-  //   time[timeId] -= (t1.tv_sec * 1000.0 + t1.tv_usec / 1000.0) - timebase;
-  // }
-
-  // void commonGetEndTime(int timeId) {
-  //   struct timeval t1;                           
-  //   gettimeofday(&t1, NULL);
-  //   lock_guard<mutex> lock(timeMutex[timeId]);
-  //   time[timeId] += (t1.tv_sec * 1000.0 + t1.tv_usec / 1000.0) - timebase;
-  // }
 
   void startTimer(double *t) {
     struct timeval t1;                           
@@ -174,6 +162,8 @@ class Timer{
     cout << "[Time] update_h_point_cell_id: " << update_h_point_cell_id / query_num << " ms" << endl;
     cout << "[Time] sort_h_point_cell_id: " << sort_h_point_cell_id / query_num << " ms" << endl;
     cout << "[Time] get_centers_radii: " << get_centers_radii / query_num << " ms" << endl;
+    cout << "[Time] compute_uniq_pos_arr: " << compute_uniq_pos_arr / query_num << " ms" << endl;
+    cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
 
     cout << "##############################" << endl;
     cout << endl;
