@@ -291,7 +291,7 @@ void cluster_with_cuda(ScanState &state, Timer &timer) {
     timer.startTimer(&timer.cuda_find_neighbors);
     find_neighbors(state.params.check_nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
     CUDA_SYNC_CHECK();
-    find_cores(state.params.check_label, state.params.check_nn, state.params.check_cluster_id, state.window_size, state.min_pts);
+    find_cores(state.params.check_label, state.params.check_nn, state.params.check_cluster_id, state.window_size, state.min_pts, 0);
     CUDA_SYNC_CHECK();
     timer.stopTimer(&timer.cuda_find_neighbors);
 

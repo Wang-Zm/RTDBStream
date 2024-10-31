@@ -82,12 +82,13 @@ struct HitGroupData
 {
 };
 
-extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrims, OptixAabb *d_aabb);
-extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb);
-extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts);
+extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrims, OptixAabb *d_aabb, cudaStream_t stream);
+extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb, cudaStream_t stream);
+extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts, cudaStream_t stream);
 // extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);
 extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int min_pts);
 extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2);
 extern "C" void set_centers_radii(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
-								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window);
+								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window,
+                                  cudaStream_t stream);
 #endif

@@ -71,7 +71,7 @@ void make_gas(ScanState &state) {
 
     OptixAabb *d_aabb;
     CUDA_CHECK(cudaMalloc(&d_aabb, state.window_size * sizeof(OptixAabb)));
-    kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
+    kGenAABB(state.params.window, state.radius, state.window_size, d_aabb, 0);
     state.d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
 
     OptixBuildInput &vertex_input = state.vertex_input;
@@ -217,7 +217,7 @@ void make_gas_for_each_stride(ScanState &state, int unit_num) {
 
     OptixAabb *d_aabb;
     CUDA_CHECK(cudaMalloc(&d_aabb, state.window_size * sizeof(OptixAabb)));
-    kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
+    kGenAABB(state.params.window, state.radius, state.window_size, d_aabb, 0);
     state.d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
     
     OptixBuildInput &vertex_input = state.vertex_input;
@@ -305,7 +305,8 @@ void rebuild_gas(ScanState &state, int update_pos) {
     kGenAABB(state.params.window + update_pos * state.stride_size,
              state.radius,
              state.stride_size,
-             d_aabb + update_pos * state.stride_size);
+             d_aabb + update_pos * state.stride_size,
+             0);
 
     // recompute gas_buffer_sizes
     OptixAccelBufferSizes gas_buffer_sizes;
@@ -378,7 +379,8 @@ void rebuild_gas_whole_identify_cores(ScanState &state) {
     kGenAABB(state.params.window,
              state.radius,
              state.window_size,
-             d_aabb);
+             d_aabb,
+             0);
     CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
     state.vertex_input.customPrimitiveArray.aabbBuffers = &d_aabb_ptr;
     state.vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
@@ -418,14 +420,15 @@ void rebuild_gas_stride(ScanState &state, int update_pos) {
     kGenAABB(state.params.window + update_pos * state.stride_size,
              state.radius,
              state.stride_size,
-             d_aabb + update_pos * state.stride_size);
+             d_aabb + update_pos * state.stride_size,
+             state.stream);
     CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb + update_pos * state.stride_size);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.stride_size;
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &d_aabb_ptr;
 
     OPTIX_CHECK(optixAccelBuild(
                 state.context,
-                0, // CUDA stream
+                state.stream, // CUDA stream
                 &accel_options,
                 &state.vertex_input,
                 1, // num build inputs
@@ -437,7 +440,7 @@ void rebuild_gas_stride(ScanState &state, int update_pos) {
                 nullptr,
                 0
         ));
-    CUDA_SYNC_CHECK();
+    // CUDA_SYNC_CHECK();
 }
 
 // update_num: 更新 AABB 的数量、重新构建 BVH tree 的点数
@@ -452,7 +455,8 @@ void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle
         kGenAABB(state.params.window + update_pos * state.stride_size,
                  state.radius,
                  state.stride_size,
-                 d_aabb + update_pos * state.stride_size);
+                 d_aabb + update_pos * state.stride_size,
+                 0);
     }
 
     CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb + update_pos * state.stride_size);
@@ -491,7 +495,7 @@ void make_gas_by_cell_grid(ScanState &state) {
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
-    kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb);
+    kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb, 0);
 
     state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
@@ -532,7 +536,7 @@ void make_gas_by_cell(ScanState &state, Timer &timer) {
     cudaEventCreate(&end);
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
     cudaEventRecord(start);
-    kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb);
+    kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb, 0);
     cudaEventRecord(end);
     cudaEventSynchronize(end);
     float milliseconds = 0;
@@ -564,9 +568,9 @@ void make_gas_by_cell(ScanState &state, Timer &timer) {
                 nullptr,
                 0
         ));
-#ifndef OPTIMIZATION_HETEROGENEOUS
-    CUDA_SYNC_CHECK();
-#endif
+// #ifndef OPTIMIZATION_HETEROGENEOUS
+//     CUDA_SYNC_CHECK();
+// #endif
 }
 
 void make_module(ScanState &state) {

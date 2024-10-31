@@ -128,18 +128,19 @@ void find_neighbors_cores(ScanState &state, int update_pos) {
     state.params.stride_right = state.params.stride_left + state.stride_size;
     memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
 
-    CUDA_CHECK(cudaMemcpy(state.params.out_stride, state.params.out, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.out, state.h_window + update_pos * state.stride_size, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
+    CUDA_CHECK(cudaStreamCreate(&state.stream));
+    CUDA_CHECK(cudaMemcpyAsync(state.params.out_stride, state.params.out, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK(cudaMemcpyAsync(state.params.out, state.h_window + update_pos * state.stride_size, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemsetAsync(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
     rebuild_gas_stride(state, update_pos);
-    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice)); // ? 可以为 params 申请一个 pinned memory
+    CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice)); // ? 可以为 params 申请一个 pinned memory
     // ! 这里的 cudaMemcpy 会让上方的异步操作停下，但是对 state.d_params 使用异步 cudaMemcpy 也没有报错
-    OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 2, 1));
+    OPTIX_CHECK(optixLaunch(state.pipeline, state.stream, state.d_params, sizeof(Params), &state.sbt, state.window_size, 2, 1));
     
-    find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts);
-#ifndef OPTIMIZATION_HETEROGENEOUS
-    CUDA_SYNC_CHECK();
-#endif
+    find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts, state.stream);
+// #ifndef OPTIMIZATION_HETEROGENEOUS
+//     CUDA_SYNC_CHECK();
+// #endif
 }
 
 void update_grid(ScanState &state, int update_pos, int window_left, int window_right) {
@@ -260,6 +261,39 @@ void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
         }
         num_centers++;
     }
+    
+    // CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+    // int i1 = 0;
+    // while (i1 < state.window_size) {
+    //     int cell_id = state.h_point_cell_id[pos_arr[i1]];
+    //     int point_num = state.cell_point_num[cell_id];
+    //     if (point_num >= state.min_pts) {
+    //         int t = i1 + point_num;
+    //         for (int i2 = i1; i2 < t; i2++) {
+    //             state.h_cluster_id[pos_arr[i2]] = pos_arr[i1];
+    //         }
+    //         uniq_pos_arr[num_centers] = i1;
+    //         num_points[num_centers] = point_num;
+    //         num_centers++;
+    //     } else {
+    //         int t = i1 + point_num;
+    //         // TODO: Find first core
+    //         int core = -1;
+    //         for (int i2 = i1; i2 < t; i2++) {
+    //             if (state.h_label[pos_arr[i2]] == 0) {
+    //                 core = pos_arr[i2];
+    //                 break;
+    //             }
+    //         }
+    //         for (int i2 = i1; i2 < t; i2++) { // In this way, `cell_id` and `point_num` will not be calculated repeatedly
+    //             state.h_cluster_id[pos_arr[i2]] = core >= 0 ? core : pos_arr[i2];
+    //             uniq_pos_arr[num_centers] = i2;
+    //             num_points[num_centers] = 1;
+    //             num_centers++;
+    //         }
+    //     }
+    //     i1 += point_num;
+    // }
 
     // int i1 = 0;
     // while (i1 < state.window_size) {
@@ -300,13 +334,15 @@ void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
     CUDA_CHECK(cudaMemcpy(state.params.pos_arr + state.window_size, uniq_pos_arr, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, num_points, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.pos_arr, pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
     // CUDA_CHECK(cudaMemcpy(state.params.point_status, point_status, state.window_size * sizeof(bool), cudaMemcpyHostToDevice));
     set_centers_radii(
         state.params.window, state.params.radius, state.params.pos_arr, state.params.pos_arr + state.window_size, state.params.cell_point_num, 
         state.params.min_pts, state.params.min_value, state.params.cell_length, state.params.center_num,
-        state.params.centers, state.params.radii, state.params.cluster_id, state.params.cell_points, state.params.center_idx_in_window
+        state.params.centers, state.params.radii, state.params.cluster_id, state.params.cell_points, state.params.center_idx_in_window,
+        0
     );
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
     timer.stopTimer(&timer.get_centers_radii);
 }
 
@@ -530,7 +566,7 @@ void search_naive(ScanState &state, bool timing) {
 
         // set labels and find cores
         timer.startTimer(&timer.find_cores);
-        find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts);
+        find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts, 0);
         timer.stopTimer(&timer.find_cores);
 
         // 根据获取到的 core 开始 union，设置 cluster_id
@@ -721,7 +757,7 @@ void search_with_grid(ScanState &state, bool timing) {
         timer.stopTimer(&timer.in_stride_ray);
 
         timer.startTimer(&timer.find_cores);
-        find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts);
+        find_cores(state.params.label, state.params.nn, state.params.cluster_id, state.window_size, state.min_pts, 0);
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.find_cores);
 
@@ -920,7 +956,7 @@ void search(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
-        // if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
+        if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
 
         // printf("[Step] Finish window %d\n", stride_num);
     }
@@ -1010,11 +1046,11 @@ int main(int argc, char *argv[]) {
 #if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
     search(state, true);
 #elif OPTIMIZATION_LEVEL == 2
-    search_with_grid(state, true);
+    search_with_grid(state, false);
 #elif OPTIMIZATION_LEVEL == 1
-    search_identify_cores(state, true);
+    search_identify_cores(state, false);
 #elif OPTIMIZATION_LEVEL == 0
-    search_naive(state, true);
+    search_naive(state, false);
 #endif
     printf("[Step] Warmup\n");
     timer.clear();
@@ -1023,13 +1059,13 @@ int main(int argc, char *argv[]) {
     state.cell_repres.clear();
     // Timing
 #if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
-    search(state, false);
+    search(state, true);
 #elif OPTIMIZATION_LEVEL == 2
-    search_with_grid(state, false);
+    search_with_grid(state, true);
 #elif OPTIMIZATION_LEVEL == 1
-    search_identify_cores(state, false);
+    search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
-    search_naive(state, false);
+    search_naive(state, true);
 #endif
 
     timer.showTime((state.data_num - state.window_size) / state.stride_size);

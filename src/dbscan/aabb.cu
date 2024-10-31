@@ -31,11 +31,11 @@ __global__ void kGenAABB_t (
   };
 }
 
-extern "C" void kGenAABB(DATA_TYPE_3* points, DATA_TYPE width, unsigned numPrims, OptixAabb* d_aabb) {
+extern "C" void kGenAABB(DATA_TYPE_3* points, DATA_TYPE width, unsigned numPrims, OptixAabb* d_aabb, cudaStream_t stream) {
   unsigned int threadsPerBlock = 64;
   unsigned int numOfBlocks = numPrims / threadsPerBlock + 1;
 
-  kGenAABB_t <<<numOfBlocks, threadsPerBlock>>> (
+  kGenAABB_t <<<numOfBlocks, threadsPerBlock, 0, stream>>> (
     points,
     width,
     numPrims,
@@ -63,11 +63,11 @@ __global__ void kGenAABB_by_center_t (DATA_TYPE_3* points, DATA_TYPE* radius, un
 	};
 }
 
-extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb) {
+extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb, cudaStream_t stream) {
   unsigned int threadsPerBlock = 64;
   unsigned int numOfBlocks = numPrims / threadsPerBlock + 1;
 
-  kGenAABB_by_center_t <<<numOfBlocks, threadsPerBlock>>> (
+  kGenAABB_by_center_t <<<numOfBlocks, threadsPerBlock, 0, stream>>> (
     points,
     width,
     numPrims,
@@ -125,10 +125,10 @@ __global__ void find_cores_t(int* label, int* nn, int* cluster_id, int window_si
 	cluster_id[idx] = idx; 	// 初始化 cluster
 }
 
-extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts) {
+extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts, cudaStream_t stream) {
 	unsigned threadsPerBlock = 64;
 	unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
-	find_cores_t <<<numOfBlocks, threadsPerBlock>>> (
+	find_cores_t <<<numOfBlocks, threadsPerBlock, 0, stream>>> (
 		label,
 		nn,
 		cluster_id,
@@ -437,10 +437,11 @@ __global__ void set_centers_radii_t(DATA_TYPE_3* window, DATA_TYPE radius, int* 
 }
 
 extern "C" void set_centers_radii(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
-								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window) {
+								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window,
+								  cudaStream_t stream) {
 	int block = 32;
 	int grid = (num_centers + block - 1) / block;
-	set_centers_radii_t <<<grid, block>>> (
+	set_centers_radii_t <<<grid, block, 0, stream>>> (
 		window, radius, pos_arr, uniq_pos_arr, num_points, min_pts, min_value, cell_length, num_centers,
 		centers, radii, cluster_id, cell_points, center_idx_in_window
 	);

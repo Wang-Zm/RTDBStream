@@ -91,6 +91,8 @@ struct ScanState
     unordered_map<int, int>         cell_repres;
     int*                            uniq_pos_arr;
     int*                            num_points;
+
+    cudaStream_t                    stream;
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);

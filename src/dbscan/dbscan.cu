@@ -403,6 +403,9 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     if (params.cell_point_num[primIdx] < params.min_pts) { // point-sphere
         // 先判别是否已经是同一 cluster
         int prim_idx_in_window = params.center_idx_in_window[primIdx];
+        // if (prim_idx_in_window > ray_id) { // * Avoid calculating repeatedly
+        //     return;
+        // }
         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
         // 否则求解两个点之间的距离
         DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
@@ -411,9 +414,11 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
             unite(ray_id, prim_idx_in_window, params.cluster_id);
         } else {
             if (params.cluster_id[prim_idx_in_window] == prim_idx_in_window) {
-                atomicCAS(params.cluster_id + prim_idx_in_window, prim_idx_in_window, ray_id);
+                // atomicCAS(params.cluster_id + prim_idx_in_window, prim_idx_in_window, ray_id);
+                params.cluster_id[prim_idx_in_window] = ray_id;
+                params.label[prim_idx_in_window] = 1;
+                // TODO: Check correctness
             }
-            params.label[prim_idx_in_window] = 1;
         }
     } else { // cell-sphere
         int prim_idx_in_window = params.center_idx_in_window[primIdx]; // primIdx 是 window 中第一个属于该 cell 中的点的 idx，可以视为该 cell 的代表点
