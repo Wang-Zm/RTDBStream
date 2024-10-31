@@ -440,7 +440,6 @@ void rebuild_gas_stride(ScanState &state, int update_pos) {
                 nullptr,
                 0
         ));
-    // CUDA_SYNC_CHECK();
 }
 
 // update_num: 更新 AABB 的数量、重新构建 BVH tree 的点数
@@ -534,14 +533,9 @@ void make_gas_by_cell(ScanState &state, Timer &timer) {
     cudaEvent_t start, end;
     cudaEventCreate(&start);
     cudaEventCreate(&end);
-    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
     cudaEventRecord(start);
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
     kGenAABB_by_center(state.params.centers, state.params.radii, state.params.center_num, d_aabb, 0);
-    cudaEventRecord(end);
-    cudaEventSynchronize(end);
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, end);
-    timer.build_bvh += milliseconds;
 
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
@@ -568,9 +562,13 @@ void make_gas_by_cell(ScanState &state, Timer &timer) {
                 nullptr,
                 0
         ));
-// #ifndef OPTIMIZATION_HETEROGENEOUS
-//     CUDA_SYNC_CHECK();
-// #endif
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, end);
+    timer.build_hybrid_bvh += milliseconds;
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(end));
 }
 
 void make_module(ScanState &state) {

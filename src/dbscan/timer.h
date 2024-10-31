@@ -49,13 +49,30 @@ class Timer{
   double sort_h_point_cell_id;
   double get_centers_radii;
   double compute_uniq_pos_arr;
+  double set_centers_radii;
+
+  cudaEvent_t start1, stop1;
+  cudaEvent_t start2, stop2;
+  float milliseconds1, milliseconds2;
 
   Timer() {
     struct timeval t1;                           
     gettimeofday(&t1, NULL);
     timebase = t1.tv_sec * 1000.0 + t1.tv_usec / 1000.0;
     clear();
+    // CUDA_CHECK(cudaEventCreate(&start1));
+    // CUDA_CHECK(cudaEventCreate(&stop1));
+    // CUDA_CHECK(cudaEventCreate(&start2));
+    // CUDA_CHECK(cudaEventCreate(&stop2));
+    // * If the cudaEvent is not synchronized, calling `cudaSynchronize()` will toggle error
   }
+
+  // ~Timer() {
+  //   CUDA_CHECK(cudaEventDestroy(start1));
+  //   CUDA_CHECK(cudaEventDestroy(stop1));
+  //   CUDA_CHECK(cudaEventDestroy(start2));
+  //   CUDA_CHECK(cudaEventDestroy(stop2));
+  // }
 
   void clear() {
     build_bvh = 0;
@@ -95,6 +112,7 @@ class Timer{
     sort_h_point_cell_id = 0;
     get_centers_radii = 0;
     compute_uniq_pos_arr = 0;
+    set_centers_radii = 0;
   }
 
   void startTimer(double *t) {
@@ -163,6 +181,7 @@ class Timer{
     cout << "[Time] sort_h_point_cell_id: " << sort_h_point_cell_id / query_num << " ms" << endl;
     cout << "[Time] get_centers_radii: " << get_centers_radii / query_num << " ms" << endl;
     cout << "[Time] compute_uniq_pos_arr: " << compute_uniq_pos_arr / query_num << " ms" << endl;
+    cout << "[Time] set_centers_radii: " << set_centers_radii / query_num << " ms" << endl;
     cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
 
     cout << "##############################" << endl;
