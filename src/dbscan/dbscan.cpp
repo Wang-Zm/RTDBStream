@@ -244,7 +244,6 @@ void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
 }
 
 void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
-    // timer.startTimer(&timer.get_centers_radii);
     timer.startTimer(&timer.compute_uniq_pos_arr);
     int *uniq_pos_arr = state.uniq_pos_arr;
     int *num_points = state.num_points;
@@ -267,7 +266,7 @@ void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
     state.params.center_num = num_centers;
     // CUDA_CHECK(cudaEventCreate(&timer.start1));
     // CUDA_CHECK(cudaEventCreate(&timer.stop1));
-    // CUDA_CHECK(cudaEventRecord(timer.start1, 0));
+    // CUDA_CHECK(cudaEventRecord(timer.start1, state.stream2));
     CUDA_CHECK(cudaMemcpyAsync(state.params.pos_arr + state.window_size, uniq_pos_arr, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice, 0));
     CUDA_CHECK(cudaMemcpyAsync(state.params.cell_point_num, num_points, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice, 0));
     CUDA_CHECK(cudaMemcpyAsync(state.params.pos_arr, pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice, 0));
@@ -277,15 +276,12 @@ void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
         state.params.centers, state.params.radii, state.params.cluster_id, state.params.cell_points, state.params.center_idx_in_window,
         0
     );
-    // CUDA_CHECK(cudaEventRecord(timer.stop1, 0));
+    // CUDA_CHECK(cudaEventRecord(timer.stop1, state.stream2));
     // CUDA_CHECK(cudaEventSynchronize(timer.stop1));
-    // float milliseconds;
-    // CUDA_CHECK(cudaEventElapsedTime(&milliseconds, timer.start1, timer.stop1));
-    // timer.set_centers_radii += milliseconds;
+    // CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds1, timer.start1, timer.stop1));
+    // timer.set_centers_radii += timer.milliseconds1;
     // CUDA_CHECK(cudaEventDestroy(timer.start1));
     // CUDA_CHECK(cudaEventDestroy(timer.stop1));
-
-    // timer.stopTimer(&timer.get_centers_radii);
 }
 
 void update_grid_without_vector(ScanState &state, int update_pos, int window_left, int window_right) {    
@@ -575,15 +571,18 @@ void search_identify_cores(ScanState &state, bool timing) {
     CUDA_SYNC_CHECK();
 
     // * Start sliding
+    CUDA_CHECK(cudaStreamCreate(&state.stream));
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
-
-        timer.startTimer(&timer.find_cores);
         find_neighbors_cores(state, update_pos);
-        timer.stopTimer(&timer.find_cores);
+        CUDA_CHECK(cudaEventSynchronize(timer.stop2));
+        CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds2, timer.start2, timer.stop2));
+        timer.find_cores += timer.milliseconds2;
+        CUDA_CHECK(cudaEventDestroy(timer.start2));
+        CUDA_CHECK(cudaEventDestroy(timer.stop2));
 
         timer.startTimer(&timer.whole_bvh);
         rebuild_gas(state); // 不再更新aabb，因为rebuild_gas已经更新好
@@ -632,6 +631,7 @@ void search_identify_cores(ScanState &state, bool timing) {
 
         // printf("[Step] Finish window %d\n", window_left / state.stride_size);
     }
+    CUDA_CHECK(cudaStreamDestroy(state.stream));
     printf("[Step] Finish sliding the window...\n");
 }
 
@@ -777,7 +777,7 @@ void search_with_grid(ScanState &state, bool timing) {
     printf("[Debug] cluster_ray_intersections=%lu\n", cluster_ray_intersections);
 }
 
-void search(ScanState &state, bool timing) {
+void search_hybrid_bvh(ScanState &state, bool timing) {
     int remaining_data_num  = state.data_num - state.window_size;
     int unit_num            = state.window_size / state.stride_size;
     int update_pos          = 0;
@@ -824,59 +824,28 @@ void search(ScanState &state, bool timing) {
     if (!timing) printf("[Info] checking\n");
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
-        
+        timer.startTimer(&timer.pre_process);
         find_neighbors_cores(state, update_pos);
-
-#if OPTIMIZATION_LEVEL == 4
-        // timer.startTimer(&timer.update_grid);
-        update_grid_without_vector(state, update_pos, window_left, window_right);
-        // timer.stopTimer(&timer.update_grid);
-#else
-        timer.startTimer(&timer.update_grid);
-        update_grid(state, update_pos, window_left, window_right);
-        timer.stopTimer(&timer.update_grid);
-
-        timer.startTimer(&timer.hybrid_sphere);
-        get_centers_radii_device(state);
-        timer.stopTimer(&timer.hybrid_sphere);
-#endif
-        
-        make_gas_by_cell(state, timer);
-
-#if OPTIMIZATION_LEVEL == 3
-        timer.startTimer(&timer.early_cluster);
-        early_cluster(state);
-        timer.stopTimer(&timer.early_cluster);
-#endif
-
         CUDA_CHECK(cudaEventSynchronize(timer.stop2));
         CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds2, timer.start2, timer.stop2));
         timer.find_cores += timer.milliseconds2;
         CUDA_CHECK(cudaEventDestroy(timer.start2));
         CUDA_CHECK(cudaEventDestroy(timer.stop2));
+        update_grid_without_vector(state, update_pos, window_left, window_right);
+        make_gas_by_cell(state, timer);
+        timer.stopTimer(&timer.pre_process);
 
-        // CUDA_CHECK(cudaEventSynchronize(timer.stop1));
-        // CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds1, timer.start1, timer.stop1));
-        // timer.set_centers_radii += timer.milliseconds1;
-        // CUDA_CHECK(cudaEventDestroy(timer.start1));
-        // CUDA_CHECK(cudaEventDestroy(timer.stop1));
-
-        // CUDA_CHECK(cudaStreamSynchronize(state.stream));
-        CUDA_CHECK(cudaStreamSynchronize(0));
-
-        cudaEvent_t start, stop;
-        CUDA_CHECK(cudaEventCreate(&start));
-        CUDA_CHECK(cudaEventCreate(&stop));
-        CUDA_CHECK(cudaEventRecord(start, 0));
+        CUDA_CHECK(cudaEventCreate(&timer.start1));
+        CUDA_CHECK(cudaEventCreate(&timer.stop1));
+        CUDA_CHECK(cudaEventRecord(timer.start1));
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
-        CUDA_CHECK(cudaEventRecord(stop, 0));
-        CUDA_CHECK(cudaEventSynchronize(stop));
-        float milliseconds;
-        CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
-        CUDA_CHECK(cudaEventDestroy(start));
-        CUDA_CHECK(cudaEventDestroy(stop));
-        timer.set_cluster_id += milliseconds;
+        CUDA_CHECK(cudaEventRecord(timer.stop1));
+        CUDA_CHECK(cudaEventSynchronize(timer.stop1));
+        CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds1, timer.start1, timer.stop1));
+        CUDA_CHECK(cudaEventDestroy(timer.start1));
+        CUDA_CHECK(cudaEventDestroy(timer.stop1));
+        timer.set_cluster_id += timer.milliseconds1;
 
         timer.startTimer(&timer.union_cluster_id);
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
@@ -887,14 +856,110 @@ void search(ScanState &state, bool timing) {
         }
         timer.stopTimer(&timer.union_cluster_id);
 
-        CUdeviceptr tmp;
-        tmp = state.d_gas_temp_buffer_list[update_pos];
-        state.d_gas_temp_buffer_list[update_pos]   = state.d_gas_temp_buffer;
-        state.d_gas_temp_buffer = tmp;
-        tmp = state.d_gas_output_buffer_list[update_pos];
-        state.d_gas_output_buffer_list[update_pos] = state.d_gas_output_buffer;
-        state.d_gas_output_buffer = tmp;
+        swap(state.d_gas_temp_buffer_list[update_pos], state.d_gas_temp_buffer);
+        swap(state.d_gas_output_buffer_list[update_pos], state.d_gas_output_buffer);
+        state.handle_list[update_pos] = state.params.in_stride_handle;
 
+        stride_num++;
+        remaining_data_num  -= state.stride_size;
+        state.new_stride    += state.stride_size;
+        update_pos           = (update_pos + 1) % unit_num;
+        window_left         += state.stride_size;
+        window_right        += state.stride_size;
+        timer.stopTimer(&timer.total);
+        // printf("[Time] Total process: %lf ms\n", timer.total);
+        // timer.total = 0.0;
+        
+        if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
+
+        // printf("[Step] Finish window %d\n", stride_num);
+    }
+    CUDA_CHECK(cudaStreamDestroy(state.stream));
+    printf("[Step] Finish sliding the window...\n");
+}
+
+void search_async(ScanState &state, bool timing) {
+    int remaining_data_num  = state.data_num - state.window_size;
+    int unit_num            = state.window_size / state.stride_size;
+    int update_pos          = 0;
+    int stride_num          = 0;
+    int window_left         = 0;
+    int window_right        = state.window_size;
+    state.new_stride        = state.h_data + state.window_size;
+
+    log_common_info(state);
+
+    // * 设置 buffer 数组
+    state.d_gas_temp_buffer_list   = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
+    state.d_gas_output_buffer_list = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
+    state.handle_list              = (OptixTraversableHandle*) malloc(unit_num * sizeof(OptixTraversableHandle));
+
+    // * Initialize the first window
+    CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    make_gas_for_each_stride(state, unit_num);
+    
+    CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
+    find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
+    CUDA_SYNC_CHECK(); // May conflict with un-synchronized stream
+    
+    for (int i = 0; i < state.window_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]++;
+        state.cell_points[cell_id].push_back(i);
+        state.h_point_cell_id[i] = cell_id;
+    }
+
+    int *pos_arr = state.pos_arr;
+    int *point_cell_id = state.h_point_cell_id;
+    for (int i = 0; i < state.window_size; i++) pos_arr[i] = i;
+    sort(pos_arr, pos_arr + state.window_size, 
+         [&point_cell_id](size_t i1, size_t i2) { 
+            return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
+         });
+
+    // * Start sliding
+    CUDA_CHECK(cudaStreamCreate(&state.stream));
+    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
+    printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    if (!timing) printf("[Info] checking\n");
+    while (remaining_data_num >= state.stride_size) {
+        timer.startTimer(&timer.total);
+        timer.startTimer(&timer.pre_process);
+        find_neighbors_cores(state, update_pos);
+        update_grid_without_vector(state, update_pos, window_left, window_right);
+        make_gas_by_cell(state, timer);
+        
+        CUDA_CHECK(cudaEventSynchronize(timer.stop2));
+        CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds2, timer.start2, timer.stop2));
+        timer.find_cores += timer.milliseconds2;
+        CUDA_CHECK(cudaEventDestroy(timer.start2));
+        CUDA_CHECK(cudaEventDestroy(timer.stop2));
+        timer.stopTimer(&timer.pre_process);
+
+        CUDA_CHECK(cudaEventCreate(&timer.start1));
+        CUDA_CHECK(cudaEventCreate(&timer.stop1));
+        CUDA_CHECK(cudaEventRecord(timer.start1));
+        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
+        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
+        CUDA_CHECK(cudaEventRecord(timer.stop1));
+        CUDA_CHECK(cudaEventSynchronize(timer.stop1));
+        CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds1, timer.start1, timer.stop1));
+        CUDA_CHECK(cudaEventDestroy(timer.start1));
+        CUDA_CHECK(cudaEventDestroy(timer.stop1));
+        timer.set_cluster_id += timer.milliseconds1;
+
+        timer.startTimer(&timer.union_cluster_id);
+        CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        for (int i = 0; i < state.window_size; i++) {
+            if (state.h_label[i] == 2) continue;
+            find(i, state.h_cluster_id);
+        }
+        timer.stopTimer(&timer.union_cluster_id);
+
+        swap(state.d_gas_temp_buffer_list[update_pos], state.d_gas_temp_buffer);
+        swap(state.d_gas_output_buffer_list[update_pos], state.d_gas_output_buffer);
         state.handle_list[update_pos] = state.params.in_stride_handle;
 
         stride_num++;
@@ -990,14 +1055,16 @@ int main(int argc, char *argv[]) {
     initialize_params(state);
     
     // Warmup
-#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
-    search(state, true);
+#if OPTIMIZATION_LEVEL == 4
+    search_async(state, true);
+#elif OPTIMIZATION_LEVEL == 3
+    search_hybrid_bvh(state, true);
 #elif OPTIMIZATION_LEVEL == 2
     search_with_grid(state, false);
 #elif OPTIMIZATION_LEVEL == 1
-    search_identify_cores(state, false);
+    search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
-    search_naive(state, false);
+    search_naive(state, true);
 #endif
     printf("[Step] Warmup\n");
     timer.clear();
@@ -1005,8 +1072,10 @@ int main(int argc, char *argv[]) {
     state.cell_points.clear();
     state.cell_repres.clear();
     // Timing
-#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
-    search(state, true);
+#if OPTIMIZATION_LEVEL == 4
+    search_async(state, true);
+#elif OPTIMIZATION_LEVEL == 3
+    search_hybrid_bvh(state, true);
 #elif OPTIMIZATION_LEVEL == 2
     search_with_grid(state, true);
 #elif OPTIMIZATION_LEVEL == 1

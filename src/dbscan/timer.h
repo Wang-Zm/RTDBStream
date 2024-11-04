@@ -22,6 +22,7 @@ class Timer{
   double hybrid_sphere;
   double build_hybrid_bvh;
 
+  double pre_process;
   double update_grid;
   double early_cluster;
   double set_cluster_id;
@@ -85,6 +86,7 @@ class Timer{
     hybrid_sphere = 0;
     build_hybrid_bvh = 0;
 
+    pre_process = 0;
     update_grid = 0;
     early_cluster = 0;
     set_cluster_id = 0;
@@ -165,6 +167,7 @@ class Timer{
     cout << "[Time] free_cell_points: " << free_cell_points / query_num << " ms" << endl;
     // cout << "[Time] copy_cluster_d2h: " << copy_cluster_d2h / query_num << " ms" << endl;
     
+    cout << "[Time] pre_process: " << pre_process / query_num << " ms" << endl;
     cout << "[Time] total: " << total / query_num << " ms" << endl << endl;
     
     cout << "[Time] cpu_cluter_total: " << cpu_cluter_total / query_num << " ms" << endl;
