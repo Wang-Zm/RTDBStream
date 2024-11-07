@@ -51,8 +51,6 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_params), sizeof(Params)));
     CUDA_CHECK(cudaMallocHost(&state.h_cluster_id, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMallocHost(&state.h_label, state.window_size * sizeof(int)));
-    // state.h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    // state.h_label = (int*) malloc(state.window_size * sizeof(int));
 
     CUDA_CHECK(cudaMalloc(&state.params.centers, state.window_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(&state.params.radii, state.window_size * sizeof(DATA_TYPE)));
@@ -68,13 +66,10 @@ void initialize_params(ScanState &state) {
     state.points_in_dense_cells = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMalloc(&state.params.pos_arr, 2 * state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&state.params.point_status, state.window_size * sizeof(bool)));
-    // state.pos_arr = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMallocHost(&state.pos_arr, state.window_size * sizeof(int)));
     state.tmp_pos_arr = (int*) malloc(state.window_size * sizeof(int));
     state.new_pos_arr = (int*) malloc(state.stride_size * sizeof(int));
-    // state.uniq_pos_arr = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMallocHost(&state.uniq_pos_arr, state.window_size * sizeof(int)));
-    // state.num_points = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMallocHost(&state.num_points, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&state.params.cell_count, 3 * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(state.params.cell_count, state.cell_count.data(), 3 * sizeof(int), cudaMemcpyHostToDevice));
@@ -95,6 +90,17 @@ void initialize_params(ScanState &state) {
     size_t used;
     stop_gpu_mem(&start, &used);
     std::cout << "[Mem] initialize_params: " << 1.0 * used / (1 << 20) << std::endl;
+
+    // Allocate memory for CUDA implementation
+#if OPTIMIZATION_LEVEL == 10
+    CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
+    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
+    state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
+    state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
+    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
+#endif
 }
 
 void log_common_info(ScanState &state) {
@@ -444,6 +450,44 @@ void early_cluster(ScanState &state) { // 根据所属的 cell，快速设置 cl
         }
     }
     CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice)); // TODO: 之前 find_cores 方法中对这个的设置是没必要的，可以去掉
+}
+
+void search_cuda(ScanState &state) {
+    int remaining_data_num  = state.data_num - state.window_size;
+    int unit_num            = state.window_size / state.stride_size;
+    int update_pos          = 0;
+    int stride_num          = 0;
+    int window_left         = 0;
+    int window_right        = state.window_size;
+    state.new_stride        = state.h_data + state.window_size;
+
+    log_common_info(state);
+
+    // * Initialize the first window
+    CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    // make_gas_for_each_stride(state, unit_num);
+    CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
+    find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
+    CUDA_SYNC_CHECK(); // May conflict with un-synchronized stream
+
+    // * Start sliding
+    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
+    printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    while (remaining_data_num >= state.stride_size) {
+        cluster_with_cuda(state, timer);
+        stride_num++;
+        remaining_data_num  -= state.stride_size;
+        state.new_stride    += state.stride_size;
+        update_pos           = (update_pos + 1) % unit_num;
+        window_left         += state.stride_size;
+        window_right        += state.stride_size;
+        timer.stopTimer(&timer.total);
+        // printf("[Time] Total process: %lf ms\n", timer.total);
+        // timer.total = 0.0;
+        // printf("[Step] Finish window %d\n", stride_num);
+    }
+    printf("[Step] Finish sliding the window...\n");
 }
 
 void search_naive(ScanState &state, bool timing) {
@@ -1029,6 +1073,17 @@ void cleanup(ScanState &state) {
 #endif
 
     CUDA_CHECK(cudaFree(reinterpret_cast<void *>(state.d_params)));
+
+    // Free memory for CUDA implementation
+#if OPTIMIZATION_LEVEL == 10
+    CUDA_CHECK(cudaFree(state.params.check_nn));
+    CUDA_CHECK(cudaFree(state.params.check_label));
+    CUDA_CHECK(cudaFree(state.params.check_cluster_id));
+    free(state.check_h_nn);
+    free(state.check_h_label);
+    free(state.check_h_cluster_id);
+    free(state.h_nn);
+#endif
 }
 
 int main(int argc, char *argv[]) {
@@ -1065,6 +1120,8 @@ int main(int argc, char *argv[]) {
     search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
     search_naive(state, true);
+#elif OPTIMIZATION_LEVEL == 10
+    search_cuda(state);
 #endif
     printf("[Step] Warmup\n");
     timer.clear();
@@ -1082,6 +1139,8 @@ int main(int argc, char *argv[]) {
     search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
     search_naive(state, true);
+#elif OPTIMIZATION_LEVEL == 10
+    search_cuda(state);
 #endif
 
     timer.showTime((state.data_num - state.window_size) / state.stride_size);

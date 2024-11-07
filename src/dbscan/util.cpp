@@ -281,9 +281,6 @@ void cluster_with_cpu(ScanState &state, Timer &timer) {
 }
 
 void cluster_with_cuda(ScanState &state, Timer &timer) {
-    CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMemset(state.params.check_nn, 0, state.window_size * sizeof(int)));
 
     timer.startTimer(&timer.cuda_cluter_total);
@@ -308,21 +305,13 @@ void cluster_with_cuda(ScanState &state, Timer &timer) {
         find(i, state.check_h_cluster_id);
     }
     timer.stopTimer(&timer.cuda_cluter_total);
-
-    CUDA_CHECK(cudaFree(state.params.check_nn));
-    CUDA_CHECK(cudaFree(state.params.check_label));
-    CUDA_CHECK(cudaFree(state.params.check_cluster_id));
 }
 
 bool check(ScanState &state, int window_id, Timer &timer) {
-    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
-    state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
-    state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
     // cluster_with_cpu(state, timer);
     cluster_with_cuda(state, timer);
     
     // 将 gpu 中的结果传回来
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
     CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
 
     int *nn = state.h_nn, *check_nn = state.check_h_nn;
@@ -374,10 +363,6 @@ bool check(ScanState &state, int window_id, Timer &timer) {
             }
         }
     }
-    free(state.check_h_nn);
-    free(state.check_h_label);
-    free(state.check_h_cluster_id);
-    free(state.h_nn);
     return true;
 }
 
