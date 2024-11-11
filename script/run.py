@@ -18,13 +18,15 @@ def perf(n, W, S, K, R, data_file, log_file):
 logtime = time.strftime("%y%m%d-%H%M%S")
 
 # perf(n=575468, W=10000, S=500, K=50, R=1, data_file='tao.txt', log_file='tao')
-perf(n=575468, W=10000, S=500, K=50, R=1.9, data_file='tao.txt', log_file='tao')
+# perf(n=575468, W=10000, S=500, K=50, R=1.9, data_file='tao.txt', log_file='tao')
 # set args -n 575468 -W 10000 -S 500 -K 50 -R 1.9 -f dataset/tao.txt
 
-perf(n=24876978, W=100000, S=5000, K=765, R=0.002, data_file='geolife.bin', log_file='geolife')
+# perf(n=24876978, W=100000, S=5000, K=765, R=0.002, data_file='geolife.bin', log_file='geolife')
+# set args -n 24876978 -W 100000 -S 5000 -K 765 -R 0.002 -f dataset/geolife.bin
 
 # perf(n=40000, W=10000, S=500, K=4, R=0.019607, data_file='RBF4_40000.csv', log_file='rbf')
 # set args -n 40000 -W 10000 -S 500 -K 4 -R 0.019607 -f dataset/RBF4_40000.csv
 
+perf(n=245000, W=10000, S=500, K=4, R=68.516460, data_file='EDS.txt', log_file='eds')
+
 # perf(n=1048572, W=100000, S=5000, K=50, R=0.45, data_file='stock.txt', log_file='stk')
-# set args -n 24876978 -W 100000 -S 5000 -K 765 -R 0.002 -f dataset/geolife.bin

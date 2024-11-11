@@ -68,6 +68,7 @@ struct ScanState
     int*                            check_h_nn;
     int*                            check_h_label;
     int*                            check_h_cluster_id;
+    bool                            check;
 
     vector<DATA_TYPE_3>             h_centers;
     vector<DATA_TYPE>               h_radii;
@@ -99,6 +100,7 @@ struct ScanState
 void read_data_from_tao(string& data_file, ScanState &state);
 void read_data_from_geolife(string& data_file, ScanState &state);
 void read_data_from_rbf(string& data_file, ScanState &state);
+void read_data_from_eds(string& data_file, ScanState &state);
 void read_data_from_stk(string& data_file, ScanState &state);
 size_t get_cpu_memory_usage();
 void start_gpu_mem(size_t* avail_mem);

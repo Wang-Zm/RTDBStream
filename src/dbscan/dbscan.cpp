@@ -92,15 +92,15 @@ void initialize_params(ScanState &state) {
     std::cout << "[Mem] initialize_params: " << 1.0 * used / (1 << 20) << std::endl;
 
     // Allocate memory for CUDA implementation
-#if OPTIMIZATION_LEVEL == 10
-    CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
-    state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
-    state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
-    state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
-#endif
+    if (state.check) {
+        CUDA_CHECK(cudaMalloc(&state.params.check_nn, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&state.params.check_label, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&state.params.check_cluster_id, state.window_size * sizeof(int)));
+        state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
+        state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
+        state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
+        state.h_nn = (int*) malloc(state.window_size * sizeof(int));
+    }
 }
 
 void log_common_info(ScanState &state) {
@@ -465,10 +465,9 @@ void search_cuda(ScanState &state) {
 
     // * Initialize the first window
     CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    // make_gas_for_each_stride(state, unit_num);
     CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
     find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
-    CUDA_SYNC_CHECK(); // May conflict with un-synchronized stream
+    CUDA_SYNC_CHECK();
 
     // * Start sliding
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
@@ -482,7 +481,6 @@ void search_cuda(ScanState &state) {
         update_pos           = (update_pos + 1) % unit_num;
         window_left         += state.stride_size;
         window_right        += state.stride_size;
-        timer.stopTimer(&timer.total);
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         // printf("[Step] Finish window %d\n", stride_num);
@@ -1001,6 +999,8 @@ void search_async(ScanState &state, bool timing) {
             find(i, state.h_cluster_id);
         }
         timer.stopTimer(&timer.union_cluster_id);
+        // TODO: Record the number of clusters
+        // Can record the number of points in each cluster and find >= K
 
         swap(state.d_gas_temp_buffer_list[update_pos], state.d_gas_temp_buffer);
         swap(state.d_gas_output_buffer_list[update_pos], state.d_gas_output_buffer);
@@ -1075,15 +1075,15 @@ void cleanup(ScanState &state) {
     CUDA_CHECK(cudaFree(reinterpret_cast<void *>(state.d_params)));
 
     // Free memory for CUDA implementation
-#if OPTIMIZATION_LEVEL == 10
-    CUDA_CHECK(cudaFree(state.params.check_nn));
-    CUDA_CHECK(cudaFree(state.params.check_label));
-    CUDA_CHECK(cudaFree(state.params.check_cluster_id));
-    free(state.check_h_nn);
-    free(state.check_h_label);
-    free(state.check_h_cluster_id);
-    free(state.h_nn);
-#endif
+    if (state.check) {
+        CUDA_CHECK(cudaFree(state.params.check_nn));
+        CUDA_CHECK(cudaFree(state.params.check_label));
+        CUDA_CHECK(cudaFree(state.params.check_cluster_id));
+        free(state.check_h_nn);
+        free(state.check_h_label);
+        free(state.check_h_cluster_id);
+        free(state.h_nn);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -1096,6 +1096,8 @@ int main(int argc, char *argv[]) {
         read_data_from_geolife(state.data_file, state);
     } else if (state.data_file.find("RBF") != string::npos) {
         read_data_from_rbf(state.data_file, state);
+    } else if (state.data_file.find("EDS") != string::npos) {
+        read_data_from_eds(state.data_file, state);
     } else if (state.data_file.find("stock") != string::npos) {
         read_data_from_stk(state.data_file, state);
     } else {
@@ -1108,18 +1110,19 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     initialize_params(state);
+    state.check = false;
     
     // Warmup
 #if OPTIMIZATION_LEVEL == 4
-    search_async(state, true);
+    search_async(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 3
-    search_hybrid_bvh(state, true);
+    search_hybrid_bvh(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 2
-    search_with_grid(state, false);
+    search_with_grid(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 1
-    search_identify_cores(state, true);
+    search_identify_cores(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 0
-    search_naive(state, true);
+    search_naive(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 10
     search_cuda(state);
 #endif

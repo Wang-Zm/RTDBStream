@@ -68,6 +68,22 @@ def get_params_from_rbf():
 #     epi = calc_epi(selected_rows, K, noise_ratio)
 #     print('RBF: epi=%f' % epi)
     
+def get_params_from_eds():
+    data = np.loadtxt('dataset/EDS.txt', delimiter=' ', skiprows=0, usecols=(1, 2))
+    print(data.shape)
+    W = 10000
+    random_rows = np.random.choice(data.shape[0], size=W, replace=False)
+    selected_rows = data[random_rows, :]
+    K = 4 # from Ester et al
+    noise_ratio = 0.05
+    epi = calc_epi(selected_rows, K, noise_ratio)
+    print('EDS: epi=%f' % epi)
     
-get_params_from_rbf()
+    '''
+    epi index=500
+    RBF: epi=68.516460
+    '''
+
+# get_params_from_rbf()
 # get_params_from_stk()
+get_params_from_eds()
