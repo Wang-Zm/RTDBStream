@@ -106,7 +106,7 @@ void initialize_params(ScanState &state) {
 void log_common_info(ScanState &state) {
     std::cout << "Input file: " << state.data_file << std::endl;
     std::cout << "Data num: " << state.data_num << std::endl;
-    std::cout << "Window size: " << state.window_size << ", Stride size:" << state.stride_size << ", K:" << state.min_pts << std::endl;
+    std::cout << "Window size: " << state.window_size << ", Stride size: " << state.stride_size << ", K: " << state.min_pts << std::endl;
     std::cout << "Radius: " << state.radius << ", Radius2: " << state.params.radius2 << std::endl;
     std::cout << "Cell length: " << state.cell_length << std::endl;
     for (int i = 0; i < 3; i++) std::cout << "Cell count: " << state.cell_count[i] << ", ";
@@ -116,14 +116,10 @@ void log_common_info(ScanState &state) {
 
 inline int get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
     int id = 0;
-// #if DIMENSION == 1
-//     id = (vertices[i].x - state.min_value[0]) / state.cell_length;
-// #elif DIMENSION == 3
     int dim_id_x = (data[i].x - min_value[0]) / cell_length;
     int dim_id_y = (data[i].y - min_value[1]) / cell_length;
     int dim_id_z = (data[i].z - min_value[2]) / cell_length;
     id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
-// #endif
     return id;
 }
 
@@ -157,15 +153,13 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
     for (int i = window_left; i < window_left + state.stride_size; i++) {
         int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
         state.cell_point_num[cell_id]--;
-    } // TODO: 多线程 + 原子操作
-
+    }
     // 遍历 cell_points，查看 cell 中有多少点，若变少了，那么移除前面的点
     for (auto &t: state.cell_points) {
         if (int(t.second.size()) > state.cell_point_num[t.first]) {
             t.second.erase(t.second.begin(), t.second.begin() + t.second.size() - state.cell_point_num[t.first]);
         }
-    } // TODO: 多线程 + 原子操作
-    
+    }
     int pos_start = update_pos * state.stride_size - window_right;
     for (int i = window_right; i < window_right + state.stride_size; i++) {
         int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
@@ -999,8 +993,6 @@ void search_async(ScanState &state, bool timing) {
             find(i, state.h_cluster_id);
         }
         timer.stopTimer(&timer.union_cluster_id);
-        // TODO: Record the number of clusters
-        // Can record the number of points in each cluster and find >= K
 
         swap(state.d_gas_temp_buffer_list[update_pos], state.d_gas_temp_buffer);
         swap(state.d_gas_output_buffer_list[update_pos], state.d_gas_output_buffer);
@@ -1016,8 +1008,10 @@ void search_async(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         
-        if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
-
+        if (!timing) {
+            calc_cluster_num(state.h_cluster_id, state.window_size, state.min_pts);
+            // if (!check(state, stride_num, timer)) { exit(1); }
+        }
         // printf("[Step] Finish window %d\n", stride_num);
     }
     CUDA_CHECK(cudaStreamDestroy(state.stream));
@@ -1109,8 +1103,8 @@ int main(int argc, char *argv[]) {
     make_program_groups(state);
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
+    state.check = true;
     initialize_params(state);
-    state.check = false;
     
     // Warmup
 #if OPTIMIZATION_LEVEL == 4

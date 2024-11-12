@@ -465,3 +465,21 @@ void parse_args(ScanState &state, int argc, char *argv[]) {
         }
     }
 }
+
+void calc_cluster_num(int* cluster_id, int n, int min_pts) {
+    unordered_map<int, int> cid_num;
+    for (int i = 0; i < n; i++) {
+        cid_num[cluster_id[i]]++;
+    }
+    int num_clusters = 0;
+    int num_noises = 0;
+    for (auto& item : cid_num) {
+        if (item.second >= min_pts) {
+            num_clusters++;
+        } else {
+            num_noises++;
+        }
+    }
+    printf("Number of clusters: %d, number of points in cluster: %d, number of noises: %d\n",
+            num_clusters, n - num_noises, num_noises);
+}

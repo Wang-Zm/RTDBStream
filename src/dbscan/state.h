@@ -111,6 +111,7 @@ void cluster_with_cuda(ScanState &state, Timer &timer);
 bool check(ScanState &state, int window_id, Timer &timer);
 void printUsageAndExit(const char* argv0);
 void parse_args(ScanState &state, int argc, char *argv[]);
+void calc_cluster_num(int* cluster_id, int n, int min_pts);
 
 void initialize_optix(ScanState &state);
 void make_gas(ScanState &state);
