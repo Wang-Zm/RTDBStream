@@ -611,6 +611,7 @@ void search_identify_cores(ScanState &state, bool timing) {
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    if (!timing) printf("[Info] checking\n");
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
         find_neighbors_cores(state, update_pos);
@@ -623,8 +624,6 @@ void search_identify_cores(ScanState &state, bool timing) {
         timer.startTimer(&timer.whole_bvh);
         rebuild_gas(state); // 不再更新aabb，因为rebuild_gas已经更新好
         timer.stopTimer(&timer.whole_bvh);
-        // 改成构建整个BVH tree，仍然使用整个aabb list构建
-        // rebuild_gas_whole_identify_cores(state);
 
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
@@ -1018,6 +1017,101 @@ void search_async(ScanState &state, bool timing) {
     printf("[Step] Finish sliding the window...\n");
 }
 
+void search_grid_cores_like_rtod(ScanState &state, bool timing) {
+    int remaining_data_num  = state.data_num - state.window_size;
+    int unit_num            = state.window_size / state.stride_size;
+    int update_pos          = 0;
+    int stride_num          = 0;
+    int window_left         = 0;
+    int window_right        = state.window_size;
+    state.new_stride        = state.h_data + state.window_size;
+    log_common_info(state);
+    // * Initialize the first window
+    CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    make_gas(state);
+    for (int i = 0; i < state.window_size; i++) {
+        int cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]++;
+        state.cell_points[cell_id].push_back(i);
+        state.h_point_cell_id[i] = cell_id;
+    }
+    // * Start sliding
+    CUDA_CHECK(cudaStreamCreate(&state.stream));
+    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
+    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
+    printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    if (!timing) printf("[Info] checking\n");
+    while (remaining_data_num >= state.stride_size) {
+        timer.startTimer(&timer.total);
+        timer.startTimer(&timer.pre_process);
+        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
+        CUDA_CHECK(cudaMemcpy(state.params.window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+        timer.startTimer(&timer.update_grid);
+        update_grid(state, update_pos, window_left, window_right);
+        timer.stopTimer(&timer.update_grid);
+        timer.startTimer(&timer.build_bvh);
+        make_gas_by_sparse_points(state, timer);
+        CUDA_SYNC_CHECK();
+        timer.stopTimer(&timer.build_bvh);
+        // printf("Number of centers: %d\n", state.params.center_num);
+        CUDA_CHECK(cudaMemset(state.params.nn, 0, state.params.center_num * sizeof(int)));
+        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
+        timer.startTimer(&timer.find_cores);
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
+        CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.params.center_num * sizeof(int), cudaMemcpyDeviceToHost));
+        timer.stopTimer(&timer.find_cores);
+        memset(state.h_label, 0, state.window_size * sizeof(int)); // Set all points to cores
+        for (int i = 0; i < state.params.center_num; i++) {
+            if (state.h_nn[i] < state.min_pts) { // Mark noises
+                state.h_label[state.h_center_idx_in_window[i]] = 2; // Noise
+            }
+        }
+        // Copy label and cluster_id
+        CUDA_CHECK(cudaMemcpy(state.params.label, state.h_label, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(state.params.cluster_id, state.h_cluster_id, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
+        timer.stopTimer(&timer.pre_process);
+        
+        // Build whole BVH tree for clustering
+        rebuild_gas_from_all_points_in_window(state);
+        
+        CUDA_CHECK(cudaEventCreate(&timer.start1));
+        CUDA_CHECK(cudaEventCreate(&timer.stop1));
+        CUDA_CHECK(cudaEventRecord(timer.start1));
+        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
+        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
+        CUDA_CHECK(cudaEventRecord(timer.stop1));
+        CUDA_CHECK(cudaEventSynchronize(timer.stop1));
+        CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds1, timer.start1, timer.stop1));
+        CUDA_CHECK(cudaEventDestroy(timer.start1));
+        CUDA_CHECK(cudaEventDestroy(timer.stop1));
+        timer.set_cluster_id += timer.milliseconds1;
+
+        timer.startTimer(&timer.union_cluster_id);
+        CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        for (int i = 0; i < state.window_size; i++) {
+            if (state.h_label[i] == 2) continue;
+            find(i, state.h_cluster_id);
+        }
+        timer.stopTimer(&timer.union_cluster_id);
+        
+        stride_num++;
+        remaining_data_num  -= state.stride_size;
+        state.new_stride    += state.stride_size;
+        update_pos           = (update_pos + 1) % unit_num;
+        window_left         += state.stride_size;
+        window_right        += state.stride_size;
+        timer.stopTimer(&timer.total);
+        // printf("[Time] Total process: %lf ms\n", timer.total);
+        // timer.total = 0.0;
+        if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
+        // printf("[Step] Finish window %d\n", stride_num);
+    }
+    CUDA_CHECK(cudaStreamDestroy(state.stream));
+    printf("[Step] Finish sliding the window...\n");
+}
+
 void cleanup(ScanState &state) {
     // free host memory
     free(state.h_data);
@@ -1103,11 +1197,13 @@ int main(int argc, char *argv[]) {
     make_program_groups(state);
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
-    state.check = true;
+    state.check = false;
     initialize_params(state);
     
     // Warmup
-#if OPTIMIZATION_LEVEL == 4
+#if OPTIMIZATION_LEVEL == 5
+    search_grid_cores_like_rtod(state, !state.check);
+#elif OPTIMIZATION_LEVEL == 4
     search_async(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 3
     search_hybrid_bvh(state, !state.check);
@@ -1126,7 +1222,9 @@ int main(int argc, char *argv[]) {
     state.cell_points.clear();
     state.cell_repres.clear();
     // Timing
-#if OPTIMIZATION_LEVEL == 4
+#if OPTIMIZATION_LEVEL == 5
+    search_grid_cores_like_rtod(state, true);
+#elif OPTIMIZATION_LEVEL == 4
     search_async(state, true);
 #elif OPTIMIZATION_LEVEL == 3
     search_hybrid_bvh(state, true);

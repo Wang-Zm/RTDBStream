@@ -369,48 +369,6 @@ void rebuild_gas(ScanState &state) {
     CUDA_SYNC_CHECK();
 }
 
-void rebuild_gas_whole_identify_cores(ScanState &state) {
-    OptixAccelBuildOptions accel_options = {};
-    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
-    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
-
-    OptixAabb *d_aabb;
-    CUDA_CHECK(cudaMalloc(&d_aabb, state.window_size * sizeof(OptixAabb)));
-    kGenAABB(state.params.window,
-             state.radius,
-             state.window_size,
-             d_aabb,
-             0);
-    CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
-    state.vertex_input.customPrimitiveArray.aabbBuffers = &d_aabb_ptr;
-    state.vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
-
-    // recompute gas_buffer_sizes
-    OptixAccelBufferSizes gas_buffer_sizes;
-    OPTIX_CHECK(optixAccelComputeMemoryUsage(
-                state.context,
-                &accel_options,
-                &state.vertex_input,
-                1, // Number of build inputs
-                &gas_buffer_sizes
-                ));
-    OPTIX_CHECK(optixAccelBuild(
-                state.context,
-                0, // CUDA stream
-                &accel_options,
-                &state.vertex_input,
-                1, // num build inputs
-                state.d_gas_temp_buffer_hybrid,
-                gas_buffer_sizes.tempSizeInBytes,
-                state.d_gas_output_buffer_hybrid,
-                gas_buffer_sizes.outputSizeInBytes,
-                &state.params.handle,
-                nullptr,
-                0
-        ));
-    CUDA_SYNC_CHECK();
-}
-
 void rebuild_gas_stride(ScanState &state, int update_pos) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
@@ -440,6 +398,44 @@ void rebuild_gas_stride(ScanState &state, int update_pos) {
                 nullptr,
                 0
         ));
+}
+
+void rebuild_gas_from_all_points_in_window(ScanState &state) {
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    kGenAABB(state.params.window,
+             state.radius,
+             state.window_size,
+             d_aabb,
+             0);
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+    // recompute gas_buffer_sizes
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &state.vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &state.vertex_input,
+                1, // num build inputs
+                state.d_gas_temp_buffer,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &state.params.handle,
+                nullptr,
+                0
+        ));
+    CUDA_SYNC_CHECK();
 }
 
 // update_num: 更新 AABB 的数量、重新构建 BVH tree 的点数
@@ -571,6 +567,81 @@ void make_gas_by_cell(ScanState &state, Timer &timer) {
     CUDA_CHECK(cudaEventDestroy(end));
 }
 
+void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
+    // Put points in sparse cells into state.params.centers
+    timer.startTimer(&timer.early_cluster);
+    state.h_centers.clear();
+    state.h_center_idx_in_window.clear();
+    int num_dense_cells = 0, num_sparse_points = 0;
+    for (auto& item : state.cell_points) {
+        if (item.second.size() < state.min_pts) {
+            for (int& pos : item.second) {
+                state.h_centers.push_back(state.h_window[pos]);
+                state.h_cluster_id[pos] = pos;
+            }
+            state.h_center_idx_in_window.insert(state.h_center_idx_in_window.end(), item.second.begin(), item.second.end());
+            num_sparse_points += item.second.size();
+        } else {
+            // Set cluster_id
+            int id = item.second.front();
+            for (int& pos : item.second) {
+                state.h_cluster_id[pos] = id; // ! Early cluster is not effective
+            }
+            num_dense_cells++;
+        }
+    }
+    CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, state.h_center_idx_in_window.data(), state.h_centers.size() * sizeof(int), cudaMemcpyHostToDevice));
+    state.params.center_num = state.h_centers.size();
+    timer.stopTimer(&timer.early_cluster);
+    printf("num_dense_cells: %d\n", num_dense_cells);
+    printf("num_sparse_points: %d\n", num_sparse_points);
+
+    OptixAccelBuildOptions accel_options = {};
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+    cudaEventRecord(start);
+    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    kGenAABB(state.params.centers, state.radius, state.params.center_num, d_aabb, 0);
+
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
+    state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
+
+    OptixAccelBufferSizes gas_buffer_sizes;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &state.vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes
+                ));
+    OPTIX_CHECK(optixAccelBuild(
+                state.context,
+                0, // CUDA stream
+                &accel_options,
+                &state.vertex_input,
+                1, // num build inputs
+                state.d_gas_temp_buffer,
+                gas_buffer_sizes.tempSizeInBytes,
+                state.d_gas_output_buffer,
+                gas_buffer_sizes.outputSizeInBytes,
+                &state.params.handle,
+                nullptr,
+                0
+        ));
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, end);
+    timer.build_hybrid_bvh += milliseconds;
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(end));
+}
+
 void make_module(ScanState &state) {
     size_t make_module_start_mem;
     start_gpu_mem(&make_module_start_mem);
@@ -626,12 +697,10 @@ void make_program_groups(ScanState &state) {
     OptixProgramGroupDesc raygen_prog_group_desc = {};
     raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
-// #if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
-//     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__hybrid_radius_sphere";
-// #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
-//     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__grid";
 #if OPTIMIZATION_LEVEL == 0
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__naive";
+#elif OPTIMIZATION_LEVEL == 5
+    raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__grid";
 #else
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__identify_cores";
 #endif
@@ -662,12 +731,10 @@ void make_program_groups(ScanState &state) {
     OptixProgramGroupDesc hitgroup_prog_group_desc = {};
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
-// #if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
-//     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube_hybrid_radius_sphere";
-// #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1
-//     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
 #if OPTIMIZATION_LEVEL == 0
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__naive";
+#elif OPTIMIZATION_LEVEL == 5
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
 #else
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__identify_cores";
 #endif
@@ -702,7 +769,7 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
-#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0 || OPTIMIZATION_LEVEL == 5
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";
 #endif
     // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
