@@ -14,87 +14,93 @@ using namespace std;
 
 struct ScanState
 {
-    Params                          params;
-    CUdeviceptr                     d_params;
-    OptixDeviceContext              context                   = nullptr;
-    OptixBuildInput                 vertex_input              = {};
+    Params                              params;
+    CUdeviceptr                         d_params;
+    OptixDeviceContext                  context                   = nullptr;
+    OptixBuildInput                     vertex_input              = {};
 
-    CUdeviceptr*                    d_gas_output_buffer_list;
-    CUdeviceptr*                    d_gas_temp_buffer_list;
-    CUdeviceptr                     d_gas_output_buffer       = 0;
-    CUdeviceptr                     d_gas_temp_buffer         = 0;
-    CUdeviceptr                     d_gas_output_buffer_hybrid= 0;
-    CUdeviceptr                     d_gas_temp_buffer_hybrid  = 0;
-    OptixTraversableHandle*         handle_list;
-    OptixTraversableHandle          out_stride_gas_handle;
-    OptixTraversableHandle          in_stride_gas_handle;
+    CUdeviceptr*                        d_gas_output_buffer_list;
+    CUdeviceptr*                        d_gas_temp_buffer_list;
+    CUdeviceptr                         d_gas_output_buffer       = 0;
+    CUdeviceptr                         d_gas_temp_buffer         = 0;
+    CUdeviceptr                         d_gas_output_buffer_hybrid= 0;
+    CUdeviceptr                         d_gas_temp_buffer_hybrid  = 0;
+    OptixTraversableHandle*             handle_list;
+    OptixTraversableHandle              out_stride_gas_handle;
+    OptixTraversableHandle              in_stride_gas_handle;
 
 
-    OptixAccelBufferSizes           gas_buffer_sizes;
-    const uint32_t                  vertex_input_flags[1]     = {OPTIX_GEOMETRY_FLAG_NONE};
-    CUdeviceptr                     d_aabb_ptr                = 0;
-    DATA_TYPE_3*                    new_stride;
+    OptixAccelBufferSizes               gas_buffer_sizes;
+    const uint32_t                      vertex_input_flags[1]     = {OPTIX_GEOMETRY_FLAG_NONE};
+    CUdeviceptr                         d_aabb_ptr                = 0;
+    DATA_TYPE_3*                        new_stride;
 
-    OptixModule                     module                    = nullptr;
+    OptixModule                         module                    = nullptr;
 
-    OptixProgramGroup               raygen_prog_group         = nullptr;
-    OptixProgramGroup               miss_prog_group           = nullptr;
-    OptixProgramGroup               hitgroup_prog_group       = nullptr;
-    OptixProgramGroup               raygen_cluster            = nullptr;
-    OptixProgramGroup               hitgroup_cluster          = nullptr;
+    OptixProgramGroup                   raygen_prog_group         = nullptr;
+    OptixProgramGroup                   miss_prog_group           = nullptr;
+    OptixProgramGroup                   hitgroup_prog_group       = nullptr;
+    OptixProgramGroup                   raygen_cluster            = nullptr;
+    OptixProgramGroup                   hitgroup_cluster          = nullptr;
 
-    OptixPipeline                   pipeline                  = nullptr;
-    OptixPipeline                   pipeline_cluster          = nullptr;
-    OptixPipelineCompileOptions     pipeline_compile_options  = {};
+    OptixPipeline                       pipeline                  = nullptr;
+    OptixPipeline                       pipeline_cluster          = nullptr;
+    OptixPipelineCompileOptions         pipeline_compile_options  = {};
 
-    OptixShaderBindingTable         sbt                       = {}; 
-    OptixShaderBindingTable         sbt_cluster               = {}; 
+    OptixShaderBindingTable             sbt                       = {}; 
+    OptixShaderBindingTable             sbt_cluster               = {}; 
 
-    std::string                     data_file;
-    int                             data_num;
-    DATA_TYPE_3*                    h_data;
-    vector<DATA_TYPE>               max_value;
-    vector<DATA_TYPE>               min_value;
-    // int                             dim;
-    int                             window_size;
-    int                             stride_size;
-    DATA_TYPE                       radius;
-    DATA_TYPE                       radius_one_half;
-    int                             min_pts;
-    DATA_TYPE_3*                    h_window;
-    int*                            h_nn;
-    int*                            h_label;
-    int*                            h_cluster_id;
-    int*                            check_h_nn;
-    int*                            check_h_label;
-    int*                            check_h_cluster_id;
-    bool                            check;
+    std::string                         data_file;
+    int                                 data_num;
+    DATA_TYPE_3*                        h_data;
+    vector<DATA_TYPE>                   max_value;
+    vector<DATA_TYPE>                   min_value;
+    // int                                 dim;
+    int                                 window_size;
+    int                                 stride_size;
+    DATA_TYPE                           radius;
+    DATA_TYPE                           radius_one_half;
+    int                                 min_pts;
+    DATA_TYPE_3*                        h_window;
+    int*                                h_nn;
+    int*                                h_label;
+    int*                                h_cluster_id;
+    int*                                check_h_nn;
+    int*                                check_h_label;
+    int*                                check_h_cluster_id;
+    bool                                check;
 
-    vector<DATA_TYPE_3>             h_centers;
-    vector<DATA_TYPE>               h_radii;
-    vector<int>                     h_center_idx_in_window;
-    vector<int>                     h_cell_point_num;
+    vector<DATA_TYPE_3>                 h_centers;
+    vector<DATA_TYPE>                   h_radii;
+    vector<int>                         h_center_idx_in_window;
+    vector<int>                         h_cell_point_num;
 
-    unsigned*                       h_ray_hits;
-    unsigned*                       h_ray_intersections;
+    unsigned*                           h_ray_hits;
+    unsigned*                           h_ray_intersections;
 
-    unordered_map<int, int>         cell_point_num;
-    unordered_map<int, vector<int>> cell_points;
-    unordered_map<int, int*>        cell_points_ptr;
-    int**                           d_cell_points;  // 第一层是 GPU 中的指针，d_cell_points[i] (存放于 host mem 中) 的值是 GPU 中的指针
-    int*                            points_in_dense_cells;
-    int*                            pos_arr;
-    int*                            tmp_pos_arr;
-    int*                            new_pos_arr;
-    DATA_TYPE                       cell_length;
-    vector<int>                     cell_count;
-    int*                            h_point_cell_id;
-    unordered_map<int, int>         cell_repres;
-    int*                            uniq_pos_arr;
-    int*                            num_points;
+    unordered_map<CELL_ID_TYPE, int>            cell_point_num;
+    unordered_map<CELL_ID_TYPE, vector<int>>    cell_points;
+    unordered_map<int, int*>            cell_points_ptr;
+    int**                               d_cell_points;  // 第一层是 GPU 中的指针，d_cell_points[i] (存放于 host mem 中) 的值是 GPU 中的指针
+    int*                                points_in_dense_cells;
+    int*                                pos_arr;
+    int*                                tmp_pos_arr;
+    int*                                new_pos_arr;
+    DATA_TYPE                           cell_length;
+    vector<int>                         cell_count;
+    CELL_ID_TYPE*                       h_point_cell_id;
+    unordered_map<int, int>             cell_repres;
+    int*                                uniq_pos_arr;
+    int*                                num_points;
+    unordered_map<CELL_ID_TYPE, int>    pos_of_cell;
 
-    cudaStream_t                    stream;
-    cudaStream_t                    stream2;
+    vector<int>                         neighbor_cells_list;
+    vector<int>                         neighbor_cells_capacity;
+    int*                                neighbor_cells_pos;
+    int*                                neighbor_cells_num;
+
+    cudaStream_t                        stream;
+    cudaStream_t                        stream2;
 };
 
 void read_data_from_tao(string& data_file, ScanState &state);
@@ -106,6 +112,7 @@ size_t get_cpu_memory_usage();
 void start_gpu_mem(size_t* avail_mem);
 void stop_gpu_mem(size_t* avail_mem, size_t* used);
 int find(int x, int* cid);
+void unite(int x, int y, int* cid);
 void cluster_with_cpu(ScanState &state, Timer &timer);
 void cluster_with_cuda(ScanState &state, Timer &timer);
 bool check(ScanState &state, int window_id, Timer &timer);

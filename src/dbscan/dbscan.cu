@@ -20,20 +20,20 @@ static __forceinline__ __device__ int find_repres(int v, int* cid) {
 }
 
 static __forceinline__ __device__ void unite(int ray_id, int primIdx, int* cid) {
-    int ray_rep = find_repres(ray_id, params.cluster_id);
-    int prim_rep = find_repres(primIdx, params.cluster_id);
+    int ray_rep = find_repres(ray_id, cid);
+    int prim_rep = find_repres(primIdx, cid);
     bool repeat;
     do { // 设置 core
         repeat = false;
         if (ray_rep != prim_rep) {
             int ret;
             if (ray_rep < prim_rep) {
-                if ((ret = atomicCAS(params.cluster_id + prim_rep, prim_rep, ray_rep)) != prim_rep) {
+                if ((ret = atomicCAS(cid + prim_rep, prim_rep, ray_rep)) != prim_rep) {
                     prim_rep = ret;
                     repeat = true;
                 }
             } else {
-                if ((ret = atomicCAS(params.cluster_id + ray_rep, ray_rep, prim_rep)) != ray_rep) {
+                if ((ret = atomicCAS(cid + ray_rep, ray_rep, prim_rep)) != ray_rep) {
                     ray_rep = ret;
                     repeat = true;
                 }
@@ -50,13 +50,13 @@ static __forceinline__ __device__ DATA_TYPE compute_dist(int ray_id, int primIdx
     return sqdist;
 }
 
-static __forceinline__ __device__ int get_cell_id(DATA_TYPE_3 p, DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length) {
-    int dim_id_x = (p.x - min_value[0]) / cell_length;
-    int dim_id_y = (p.y - min_value[1]) / cell_length;
-    int dim_id_z = (p.z - min_value[2]) / cell_length;
-    int id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
-    return id;
-}
+// static __forceinline__ __device__ int get_cell_id(DATA_TYPE_3 p, DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length) {
+//     int dim_id_x = (p.x - min_value[0]) / cell_length;
+//     int dim_id_y = (p.y - min_value[1]) / cell_length;
+//     int dim_id_z = (p.z - min_value[2]) / cell_length;
+//     int id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
+//     return id;
+// }
 
 extern "C" __global__ void __raygen__naive() {
     // Lookup our location within the launch grid
@@ -259,10 +259,7 @@ extern "C" __global__ void __intersection__grid() {
 #if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
 #endif
-    const DATA_TYPE_3 point    = params.centers[primIdx];
-    const DATA_TYPE_3 ray_orig = params.window[ray_id];
-    DATA_TYPE O[] = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
-    DATA_TYPE sqdist = O[0] * O[0] + O[1] * O[1] + O[2] * O[2];
+    DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
     if (sqdist < params.radius2) {
         atomicAdd(params.nn + primIdx, 1);
     }
@@ -337,26 +334,7 @@ extern "C" __global__ void __intersection__cluster() {
     DATA_TYPE sqdist = O.x * O.x + O.y * O.y + O.z * O.z;
     if (sqdist >= params.radius2) return;
     if (params.label[primIdx] == 0) {
-        ray_rep = find_repres(ray_id, params.cluster_id);
-        prim_rep = find_repres(primIdx, params.cluster_id);
-        bool repeat;
-        do { // 设置 core
-            repeat = false;
-            if (ray_rep != prim_rep) {
-                int ret;
-                if (ray_rep < prim_rep) {
-                    if ((ret = atomicCAS(params.cluster_id + prim_rep, prim_rep, ray_rep)) != prim_rep) {
-                        prim_rep = ret;
-                        repeat = true;
-                    }
-                } else {
-                    if ((ret = atomicCAS(params.cluster_id + ray_rep, ray_rep, prim_rep)) != ray_rep) {
-                        ray_rep = ret;
-                        repeat = true;
-                    }
-                }
-            }
-        } while (repeat);
+        unite(ray_id, primIdx, params.cluster_id);
     } else { // border 处暂直接设置 direct parent 即可
         if (params.cluster_id[primIdx] == primIdx) {
             atomicCAS(params.cluster_id + primIdx, primIdx, ray_id);
@@ -394,7 +372,7 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     } else { // cell-sphere
         int prim_idx_in_window = params.center_idx_in_window[primIdx]; // primIdx 是 window 中第一个属于该 cell 中的点的 idx，可以视为该 cell 的代表点
         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
-        int cell_id = get_cell_id(params.centers[primIdx], params.min_value, params.cell_count, params.cell_length);
+        // int cell_id = get_cell_id(params.centers[primIdx], params.min_value, params.cell_count, params.cell_length);
         int *points_in_cell = params.cell_points[primIdx];
         for (int i = 0; i < params.cell_point_num[primIdx]; i++) {
             if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id)) break;
@@ -404,5 +382,30 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
                 break;
             }
         }
+    }
+}
+
+extern "C" __global__ void __intersection__cluster_bvh_from_sparse_points() {
+    unsigned primIdx = optixGetPrimitiveIndex();
+    unsigned ray_id  = optixGetPayload_2();
+    int prim_idx_in_window = params.center_idx_in_window[primIdx];
+    
+    // 先判别是否已经属于同一个 cluster，prune，减少距离计算
+    int ray_rep = find_repres(ray_id, params.cluster_id);
+    int prim_rep = find_repres(prim_idx_in_window, params.cluster_id);
+    if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
+#if DEBUG_INFO == 1
+    optixSetPayload_0(optixGetPayload_0() + 1);
+#endif
+    DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
+    if (sqdist >= params.radius2) return;
+    if (params.label[prim_idx_in_window] == 0) {
+        unite(ray_id, prim_idx_in_window, params.cluster_id); // 通过所有的 core 与 BVH tree 相交。sparse 部分的点可能出现重复，但是无所谓，都会收敛到最小的 id 那里。现在仍然出现 dense cell 不完全的情况
+    } else { // border 处暂直接设置 direct parent 即可
+        if (params.cluster_id[prim_idx_in_window] == prim_idx_in_window) {
+            atomicCAS(params.cluster_id + prim_idx_in_window, prim_idx_in_window, ray_id);
+        }
+        // 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
+        params.label[prim_idx_in_window] = 1; // 设置为 border
     }
 }

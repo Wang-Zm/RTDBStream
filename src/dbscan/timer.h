@@ -52,6 +52,12 @@ class Timer{
   double compute_uniq_pos_arr;
   double set_centers_radii;
 
+  double find_neighbors_of_cells;
+  double cluster_dense_cells;
+  double find_neighbor_cells;
+  double put_neighbor_cells_list;
+  double prepare_for_points_in_dense_cells;
+
   cudaEvent_t start1, stop1;
   cudaEvent_t start2, stop2;
   float milliseconds1, milliseconds2;
@@ -115,6 +121,12 @@ class Timer{
     get_centers_radii = 0;
     compute_uniq_pos_arr = 0;
     set_centers_radii = 0;
+
+    find_neighbors_of_cells = 0;
+    cluster_dense_cells = 0;
+    find_neighbor_cells = 0;
+    put_neighbor_cells_list = 0;
+    prepare_for_points_in_dense_cells = 0;
   }
 
   void startTimer(double *t) {
@@ -186,6 +198,13 @@ class Timer{
     cout << "[Time] compute_uniq_pos_arr: " << compute_uniq_pos_arr / query_num << " ms" << endl;
     cout << "[Time] set_centers_radii: " << set_centers_radii / query_num << " ms" << endl;
     cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
+    cout << endl;
+
+    cout << "[Time] find_neighbors_of_cells: " << find_neighbors_of_cells / query_num << " ms" << endl;
+    cout << "[Time] cluster_dense_cells: " << cluster_dense_cells / query_num << " ms" << endl;
+    cout << "[Time] find_neighbor_cells: " << find_neighbor_cells / query_num << " ms" << endl;
+    cout << "[Time] put_neighbor_cells_list: " << put_neighbor_cells_list / query_num << " ms" << endl;
+    cout << "[Time] prepare_for_points_in_dense_cells: " << prepare_for_points_in_dense_cells / query_num << " ms" << endl;
 
     cout << "##############################" << endl;
     cout << endl;

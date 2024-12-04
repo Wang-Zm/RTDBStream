@@ -4,10 +4,11 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 80
 
-#define OPTIMIZATION_LEVEL 4 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 7 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
+typedef long CELL_ID_TYPE;
 
 struct Params {
     // OptixTraversableHandle  pre_handle;
@@ -64,6 +65,11 @@ struct Params {
     // int*                    c_cluster_id;
     // int**                   c_cell_points;
     // int*                    c_center_idx_in_window;
+
+    int*                    d_neighbor_cells_list;
+    int*                    d_neighbor_cells_capacity;
+    int*                    d_neighbor_cells_pos;
+    int*                    d_neighbor_cells_num;
 };
 
 
@@ -91,4 +97,14 @@ extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3
 extern "C" void set_centers_radii(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
 								  DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window,
                                   cudaStream_t stream);
+extern "C" void cluster_dense_cells(int* pos_arr,
+									DATA_TYPE_3* window,
+									int window_size,
+									DATA_TYPE radius2,
+									int* cluster_id,
+									int* d_neighbor_cells_pos,
+									int* d_neighbor_cells_num,
+									int* d_neighbor_cells_list,
+									int* d_neighbor_cells_capacity,
+									cudaStream_t stream);
 #endif

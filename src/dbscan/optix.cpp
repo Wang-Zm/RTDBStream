@@ -568,43 +568,14 @@ void make_gas_by_cell(ScanState &state, Timer &timer) {
 }
 
 void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
-    // Put points in sparse cells into state.params.centers
-    timer.startTimer(&timer.early_cluster);
-    state.h_centers.clear();
-    state.h_center_idx_in_window.clear();
-    int num_dense_cells = 0, num_sparse_points = 0;
-    for (auto& item : state.cell_points) {
-        if (item.second.size() < state.min_pts) {
-            for (int& pos : item.second) {
-                state.h_centers.push_back(state.h_window[pos]);
-                state.h_cluster_id[pos] = pos;
-            }
-            state.h_center_idx_in_window.insert(state.h_center_idx_in_window.end(), item.second.begin(), item.second.end());
-            num_sparse_points += item.second.size();
-        } else {
-            // Set cluster_id
-            int id = item.second.front();
-            for (int& pos : item.second) {
-                state.h_cluster_id[pos] = id; // ! Early cluster is not effective
-            }
-            num_dense_cells++;
-        }
-    }
-    CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, state.h_center_idx_in_window.data(), state.h_centers.size() * sizeof(int), cudaMemcpyHostToDevice));
-    state.params.center_num = state.h_centers.size();
-    timer.stopTimer(&timer.early_cluster);
-    printf("num_dense_cells: %d\n", num_dense_cells);
-    printf("num_sparse_points: %d\n", num_sparse_points);
-
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
-    cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
-    cudaEventRecord(start);
+    // cudaEvent_t start, end;
+    // cudaEventCreate(&start);
+    // cudaEventCreate(&end);
+    // cudaEventRecord(start);
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
     kGenAABB(state.params.centers, state.radius, state.params.center_num, d_aabb, 0);
 
@@ -633,13 +604,13 @@ void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
                 nullptr,
                 0
         ));
-    cudaEventRecord(end);
-    cudaEventSynchronize(end);
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, end);
-    timer.build_hybrid_bvh += milliseconds;
-    CUDA_CHECK(cudaEventDestroy(start));
-    CUDA_CHECK(cudaEventDestroy(end));
+    // cudaEventRecord(end);
+    // cudaEventSynchronize(end);
+    // float milliseconds = 0;
+    // cudaEventElapsedTime(&milliseconds, start, end);
+    // timer.build_hybrid_bvh += milliseconds;
+    // CUDA_CHECK(cudaEventDestroy(start));
+    // CUDA_CHECK(cudaEventDestroy(end));
 }
 
 void make_module(ScanState &state) {
@@ -699,7 +670,7 @@ void make_program_groups(ScanState &state) {
     raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
 #if OPTIMIZATION_LEVEL == 0
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__naive";
-#elif OPTIMIZATION_LEVEL == 5
+#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__grid";
 #else
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__identify_cores";
@@ -733,7 +704,7 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 0
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__naive";
-#elif OPTIMIZATION_LEVEL == 5
+#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
 #else
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__identify_cores";
@@ -771,6 +742,8 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0 || OPTIMIZATION_LEVEL == 5
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";
+#elif OPTIMIZATION_LEVEL == 7
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster_bvh_from_sparse_points";
 #endif
     // hitgroup_prog_group_desc.hitgroup.moduleAH = state.module;
     // hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__terminate_ray";

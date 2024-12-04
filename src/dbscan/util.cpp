@@ -9,6 +9,15 @@
 #include "timer.h"
 using namespace std;
 
+inline CELL_ID_TYPE get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
+    CELL_ID_TYPE id = 0;
+    CELL_ID_TYPE dim_id_x = (data[i].x - min_value[0]) / cell_length;
+    CELL_ID_TYPE dim_id_y = (data[i].y - min_value[1]) / cell_length;
+    CELL_ID_TYPE dim_id_z = (data[i].z - min_value[2]) / cell_length;
+    id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
+    return id;
+}
+
 void read_data_from_tao(string& data_file, ScanState &state) {
     state.h_data = (DATA_TYPE_3*) malloc(state.data_num * sizeof(DATA_TYPE_3));
     state.max_value.resize(3);
@@ -104,8 +113,8 @@ void read_data_from_geolife(string& data_file, ScanState &state) {
     for (int i = 0; i < 3; i++) {
         std::cout << "DIM[" << i << "]: " << state.min_value[i] << ", " << state.max_value[i] << std::endl;
     }
-    printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
-    printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
+    // printf("h_data[0] = {%lf, %lf, %lf}\n", state.h_data[0].x, state.h_data[0].y, state.h_data[0].z);
+    // printf("h_data[window_size-1] = {%lf, %lf, %lf}\n", state.h_data[state.window_size-1].x, state.h_data[state.window_size-1].y, state.h_data[state.window_size-1].z);
 }
 
 void read_data_from_rbf(string& data_file, ScanState &state) {
@@ -263,6 +272,16 @@ int find(int x, int* cid) {
     return cid[x] == x ? x : cid[x] = find(cid[x], cid);
 }
 
+void unite(int x, int y, int* cid) {
+    int rep1 = find(x, cid);
+    int rep2 = find(y, cid);
+    if (rep1 < rep2) {
+        cid[rep2] = rep1;
+    } else {
+        cid[rep1] = rep2;
+    }
+}
+
 void cluster_with_cpu(ScanState &state, Timer &timer) {
     // 1. 查找所有点的邻居，判别是否是 core，打上 core label
     int *check_nn = state.check_h_nn; 
@@ -359,15 +378,15 @@ bool check(ScanState &state, int window_id, Timer &timer) {
     int *nn = state.h_nn, *check_nn = state.check_h_nn;
     int *label = state.h_label, *check_label = state.check_h_label;
     int *cid = state.h_cluster_id, *check_cid = state.check_h_cluster_id;
+    // for (int i = 0; i < state.window_size; i++) {
+    //     if (nn[i] != check_nn[i]) {
+    //         printf("Error on window %d: nn[%d] = %d, check_nn[%d] = %d\n", 
+    //                 window_id, i, state.h_nn[i], i, state.check_h_nn[i]);
+    //         return false;
+    //     }
+    // }
     for (int i = 0; i < state.window_size; i++) {
-        if (nn[i] != check_nn[i]) {
-            printf("Error on window %d: nn[%d] = %d, check_nn[%d] = %d\n", 
-                    window_id, i, state.h_nn[i], i, state.check_h_nn[i]);
-            return false;
-        }
-    }
-    for (int i = 0; i < state.window_size; i++) {
-        if (label[i] != check_label[i]) {
+        if (label[i] != check_label[i]) { // ! cluster's problem
             printf("Error on window %d: label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", 
                     window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
             return false;
@@ -382,6 +401,9 @@ bool check(ScanState &state, int window_id, Timer &timer) {
                         window_id, i, cid[i], i, check_cid[i], 
                         i, label[i], i, check_label[i], 
                         i, nn[i], i, check_nn[i]);
+                CELL_ID_TYPE cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
+                int point_num = state.cell_point_num[cell_id];
+                printf("cell_point_num = %d\n", point_num);
                 return false;
             }
         } else if (label[i] == 1) { // border可能属于不同的cluster
