@@ -124,6 +124,25 @@ void make_gas(ScanState &state) {
         ));
     final_gas_size = compactedSizeOffset;
     printf("Final GAS size: %f MB\n", (float)final_gas_size / (1024 * 1024));
+
+#if OPTIMIZATION_LEVEL == 8
+    // * 为 hybrid gas 申请空间
+    vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
+    vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
+    OptixAccelBufferSizes gas_buffer_sizes_hybrid;
+    OPTIX_CHECK(optixAccelComputeMemoryUsage(
+                state.context,
+                &accel_options,
+                &vertex_input,
+                1, // Number of build inputs
+                &gas_buffer_sizes_hybrid
+                ));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_temp_buffer_hybrid),
+               gas_buffer_sizes_hybrid.tempSizeInBytes));
+    compactedSizeOffset = roundUp<size_t>(gas_buffer_sizes_hybrid.outputSizeInBytes, 8ull);
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_output_buffer_hybrid),
+               compactedSizeOffset + 8));
+#endif
 }
 
 // void make_gas_for_each_stride(ScanState &state, int unit_num) {
@@ -670,7 +689,7 @@ void make_program_groups(ScanState &state) {
     raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
 #if OPTIMIZATION_LEVEL == 0
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__naive";
-#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7
+#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__grid";
 #else
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__identify_cores";
@@ -704,7 +723,7 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 0
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__naive";
-#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7
+#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
 #else
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__identify_cores";
@@ -738,7 +757,7 @@ void make_program_groups(ScanState &state) {
 
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
-#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4
+#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4 || OPTIMIZATION_LEVEL == 8
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0 || OPTIMIZATION_LEVEL == 5
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";

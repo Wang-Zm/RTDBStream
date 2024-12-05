@@ -393,36 +393,54 @@ __global__ void cluster_dense_cells_t(int* pos_arr,
 									  int* d_neighbor_cells_num,
 									  int* d_neighbor_cells_list,
 									  int* d_neighbor_cells_capacity) {
-	// printf("hello world\n"); // 能够打印出来的
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= window_size) {
 		return;
 	}
-	int pos = pos_arr[idx]; // pos_arr[idx]
-	if (d_neighbor_cells_pos[pos] < 0) { // TODO: 为 sparse point 中的点设置为 -1
+	// int pos = idx;
+	int pos = pos_arr[idx]; // 这样相邻线程的下面 if 判别会走相同的路径，减少线程束发散 -> 对性能没有影响，问题不大
+	if (d_neighbor_cells_pos[pos] < 0) {
 		return;
 	}
 	DATA_TYPE_3 p = window[pos];
-	// printf("the number of neighbor cells: %d\n", d_neighbor_cells_num[pos]); // ! 全是 0，没有一个有 neighbor cells，有问题！
+	// for (int i = 0; i < d_neighbor_cells_num[pos]; i++) { // 得到当前 cell 有几个邻居 cell
+	// 	int nei_cell_pos = d_neighbor_cells_pos[pos] + i; // 得到邻居 cell 的信息 item 在 d_neighbor_cells_list 中的位置
+	// 	int start_pos = d_neighbor_cells_list[nei_cell_pos]; // 这个邻居 cell 在 pos_arr 中的位置
+	// 	int point_num = d_neighbor_cells_capacity[nei_cell_pos]; // 邻居 cell 中的 point 数量
+	// 	for (int j = start_pos; j < start_pos + point_num; j++) {
+	// 		// 判断是否已经是否是一个集群了，如果是，则直接跳过
+	// 		int &pos_arrj = pos_arr[j];
+	// 		int rep1 = find_repres(pos, cluster_id);
+	// 		int rep2 = find_repres(pos_arrj, cluster_id);
+	// 		if (rep1 == rep2) {
+	// 			break;
+	// 		}
+	// 		// 计算距离
+	// 		DATA_TYPE_3 O = {p.x - window[pos_arrj].x, p.y - window[pos_arrj].y, p.z - window[pos_arrj].z};
+	// 		DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
+	// 		if (d < radius2) {
+	// 			unite(pos, pos_arrj, cluster_id);
+	// 			break;
+	// 		}
+	// 	}
+	// }
+
+	// 一个 block 中的点一次和对应的 block 中的点进行计算，并且加载一次之后就一直算
+	// 1.把当前 cell 中的点加载到
+
 	for (int i = 0; i < d_neighbor_cells_num[pos]; i++) { // 得到当前 cell 有几个邻居 cell
 		int nei_cell_pos = d_neighbor_cells_pos[pos] + i; // 得到邻居 cell 的信息 item 在 d_neighbor_cells_list 中的位置
 		int start_pos = d_neighbor_cells_list[nei_cell_pos]; // 这个邻居 cell 在 pos_arr 中的位置
 		int point_num = d_neighbor_cells_capacity[nei_cell_pos]; // 邻居 cell 中的 point 数量
-		// 根据 start_pos 和 point_num 遍历 pos_arr
+		if (find_repres(pos, cluster_id) == find_repres(pos_arr[start_pos], cluster_id)) {
+			continue; // 每次进入循环时都判别一次是否要聚类，频繁判别会降低性能，
+		} // 在一切开始的时候进行判别，确定是否需要聚类，如果不需要则直接跳出去
 		for (int j = start_pos; j < start_pos + point_num; j++) {
-			// 判断是否已经是否是一个集群了，如果是，则直接跳过
 			int &pos_arrj = pos_arr[j];
-			int rep1 = find_repres(pos, cluster_id);
-			int rep2 = find_repres(pos_arrj, cluster_id);
-			if (rep1 == rep2) {
-				break;
-			}
-			// 计算距离
 			DATA_TYPE_3 O = {p.x - window[pos_arrj].x, p.y - window[pos_arrj].y, p.z - window[pos_arrj].z};
 			DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
 			if (d < radius2) {
 				unite(pos, pos_arrj, cluster_id);
-				// printf("unite success\n");
 				break;
 			}
 		}
@@ -452,4 +470,16 @@ extern "C" void cluster_dense_cells(int* pos_arr,
 		d_neighbor_cells_list,
 		d_neighbor_cells_capacity
 	);
+}
+
+__global__ void prepare_for_points_in_dense_cells_t(int* pos_arr, 
+													DATA_TYPE_3* window,
+													int window_size,
+													DATA_TYPE radius2,
+													int* cluster_id,
+													int* d_neighbor_cells_pos,
+													int* d_neighbor_cells_num,
+													int* d_neighbor_cells_list,
+													int* d_neighbor_cells_capacity) {
+	
 }

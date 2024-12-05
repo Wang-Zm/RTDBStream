@@ -18,3 +18,13 @@ OPTIX_add_sample_executable( dbscan target_name
 target_link_libraries( ${target_name}
   ${CUDA_LIBRARIES}
   )
+
+    
+# 查找 OpenMP
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+  message(STATUS "OpenMP found, enabling parallelization.")
+  target_link_libraries(${target_name} OpenMP::OpenMP_CXX)
+else()
+  message(WARNING "OpenMP not found, parallelization will not be enabled.")
+endif()

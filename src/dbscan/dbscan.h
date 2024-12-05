@@ -2,9 +2,9 @@
 #define OPTIXSCAN_H
 
 #define DEBUG_INFO 0
-#define THREAD_NUM 80
+#define THREAD_NUM 40
 
-#define OPTIMIZATION_LEVEL 7 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 8 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;

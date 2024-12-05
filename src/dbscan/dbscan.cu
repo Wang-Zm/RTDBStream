@@ -291,19 +291,19 @@ extern "C" __global__ void __raygen__cluster() {
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
     unsigned int ray_id  = idx.x;
-    unsigned int op      = 0; // 占空
+    unsigned int op      = 0;   // 占空 // TODO：可记录是否是 sparse point
     optixTrace(
             params.handle,      // 应当是针对 cores 构建的树，此时为方便，可直接基于当前窗口构建树
             ray_origin,
             ray_direction,
-            params.tmin,                   // Min intersection distance
+            params.tmin,        // Min intersection distance
             params.tmax,        // Max intersection distance
-            0.0f,                   // rayTime -- used for motion blur
+            0.0f,               // rayTime -- used for motion blur
             OptixVisibilityMask( 255 ), // Specify always visible
             OPTIX_RAY_FLAG_NONE,
-            0,                   // SBT offset   -- See SBT discussion
-            1,                   // SBT stride   -- See SBT discussion
-            0,                   // missSBTIndex -- See SBT discussion
+            0,                  // SBT offset   -- See SBT discussion
+            1,                  // SBT stride   -- See SBT discussion
+            0,                  // missSBTIndex -- See SBT discussion
             intersection_test_num,
             hit_num,
             ray_id,
@@ -348,34 +348,32 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
 
+    // TODO：考虑设置 sparse point 的光线不遇到大球：1.设置 ray_id 是否是 sparse 放到 Payload 中，如果是 sparse ray 直接跳过
+
     // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
-    if (params.cell_point_num[primIdx] < params.min_pts) { // point-sphere
+    if (params.cell_point_num[primIdx] < params.min_pts) { // Eps-radius sphere
         // 先判别是否已经是同一 cluster
         int prim_idx_in_window = params.center_idx_in_window[primIdx];
         // if (prim_idx_in_window > ray_id) { // * Avoid calculating repeatedly
         //     return;
         // }
         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
-        // 否则求解两个点之间的距离
         DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
-        if (sqdist >= params.radius2) return; // 不在范围内
+        if (sqdist >= params.radius2) return;
         if (params.label[prim_idx_in_window] == 0) {
             unite(ray_id, prim_idx_in_window, params.cluster_id);
         } else {
             if (params.cluster_id[prim_idx_in_window] == prim_idx_in_window) {
-                // atomicCAS(params.cluster_id + prim_idx_in_window, prim_idx_in_window, ray_id);
                 params.cluster_id[prim_idx_in_window] = ray_id;
                 params.label[prim_idx_in_window] = 1;
-                // TODO: Check correctness
             }
         }
-    } else { // cell-sphere
+    } else { // 1.5Eps-radius sphere
         int prim_idx_in_window = params.center_idx_in_window[primIdx]; // primIdx 是 window 中第一个属于该 cell 中的点的 idx，可以视为该 cell 的代表点
         if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
-        // int cell_id = get_cell_id(params.centers[primIdx], params.min_value, params.cell_count, params.cell_length);
         int *points_in_cell = params.cell_points[primIdx];
         for (int i = 0; i < params.cell_point_num[primIdx]; i++) {
-            if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id)) break;
+            // if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id)) break; // 不用每次都判别，可以减少很多时间。
             DATA_TYPE dist = compute_dist(ray_id, points_in_cell[i], params.window, params.window);
             if (dist < params.radius2) { // 合并 ray_origin 与该 cell
                 unite(ray_id, points_in_cell[i], params.cluster_id);

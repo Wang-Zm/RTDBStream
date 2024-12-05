@@ -129,11 +129,22 @@ option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 set(GCC_LIBSTDCPP11 ON)
 
 # Include all CMake Macros.
-include(Macros)
+include (Macros)
 # Determine information about the compiler
 include (CompilerInfo)
 # Check for specific machine/compiler options.
 include (ConfigCompilerFlags)
+# include (CPM)
+
+# CPMAddPackage(
+#   NAME cuco
+#   GITHUB_REPOSITORY NVIDIA/cuCollections
+#   GIT_TAG dev
+#   OPTIONS
+#      "BUILD_TESTS OFF"
+#      "BUILD_BENCHMARKS OFF"
+#      "BUILD_EXAMPLES OFF"
+# )
 
 # Turn off the warning that NVCC issues when generating PTX from our CUDA samples.  This
 # is a custom extension to the FindCUDA code distributed by CMake.
