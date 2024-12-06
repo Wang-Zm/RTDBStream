@@ -50,6 +50,8 @@ struct Params {
     DATA_TYPE_3*            centers;
     DATA_TYPE*              radii;
     int                     center_num;
+    int                     sparse_num;
+    int                     dense_num;
     int**                   cell_points; // 仅存放第一层即可
     int*                    cell_point_num;
     int*                    points_in_dense_cells;

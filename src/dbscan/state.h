@@ -131,6 +131,7 @@ void rebuild_gas_stride(ScanState &state, int update_pos);
 void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
 void make_gas_by_cell_grid(ScanState &state);
 void make_gas_by_cell(ScanState &state, Timer &timer);
+void make_gas_from_small_big_sphere(ScanState &state, Timer &timer);
 void make_module(ScanState &state);
 void make_program_groups(ScanState &state);
 void make_pipeline(ScanState &state);

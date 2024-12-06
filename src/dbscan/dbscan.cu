@@ -50,14 +50,6 @@ static __forceinline__ __device__ DATA_TYPE compute_dist(int ray_id, int primIdx
     return sqdist;
 }
 
-// static __forceinline__ __device__ int get_cell_id(DATA_TYPE_3 p, DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length) {
-//     int dim_id_x = (p.x - min_value[0]) / cell_length;
-//     int dim_id_y = (p.y - min_value[1]) / cell_length;
-//     int dim_id_z = (p.z - min_value[2]) / cell_length;
-//     int id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
-//     return id;
-// }
-
 extern "C" __global__ void __raygen__naive() {
     // Lookup our location within the launch grid
     const uint3 idx = optixGetLaunchIndex();    
