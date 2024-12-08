@@ -4,7 +4,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 40
 
-#define OPTIMIZATION_LEVEL 8 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 9 // 2 无用，early cluster 无效果
 
 typedef double DATA_TYPE;
 typedef double3 DATA_TYPE_3;
@@ -56,7 +56,7 @@ struct Params {
     int*                    cell_point_num;
     int*                    points_in_dense_cells;
     int*                    pos_arr;
-    bool*                   point_status;
+    // bool*                   point_status;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
@@ -72,6 +72,8 @@ struct Params {
     int*                    d_neighbor_cells_capacity;
     int*                    d_neighbor_cells_pos;
     int*                    d_neighbor_cells_num;
+
+    int*                    point_status;
 };
 
 
@@ -109,4 +111,5 @@ extern "C" void cluster_dense_cells(int* pos_arr,
 									int* d_neighbor_cells_list,
 									int* d_neighbor_cells_capacity,
 									cudaStream_t stream);
+extern "C" void post_cluster(int* label, int* cluster_id, int window_size, cudaStream_t stream);
 #endif

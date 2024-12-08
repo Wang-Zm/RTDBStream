@@ -75,6 +75,42 @@ extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsign
     );
 }
 
+static __forceinline__ __device__ int find_repres(int v, int* cid) {
+    int par = cid[v];
+    if (par != v) {
+        int next, prev = v;
+        while (par > (next = cid[par])) {
+            cid[prev] = next;
+            prev = par;
+            par = next;
+        }
+    }
+    return par;
+}
+
+static __forceinline__ __device__ void unite(int ray_id, int primIdx, int* cid) {
+    int ray_rep = find_repres(ray_id, cid);
+    int prim_rep = find_repres(primIdx, cid);
+    bool repeat;
+    do { // 设置 core
+        repeat = false;
+        if (ray_rep != prim_rep) {
+            int ret;
+            if (ray_rep < prim_rep) {
+                if ((ret = atomicCAS(cid + prim_rep, prim_rep, ray_rep)) != prim_rep) {
+                    prim_rep = ret;
+                    repeat = true;
+                }
+            } else {
+                if ((ret = atomicCAS(cid + ray_rep, ray_rep, prim_rep)) != ray_rep) {
+                    ray_rep = ret;
+                    repeat = true;
+                }
+            }
+        }
+    } while (repeat);
+}
+
 /**
  * 1.收集 c_out, ex_cores, neo_cores
  * 2.label 设置
@@ -134,6 +170,31 @@ extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size
 		cluster_id,
 		window_size,
 		min_pts
+	);
+}
+
+static __forceinline__ __device__ int find_final_repres(int v, int* cid) {
+    int par = cid[v];
+    while (par != cid[par]) {
+		par = cid[par];
+	}
+    return par;
+}
+
+__global__ void post_cluster_t(int* label, int* cluster_id, int window_size) {
+	unsigned idx = blockIdx.x * blockDim.x + threadIdx.x;
+  	if (idx >= window_size) return;
+	if (label[idx] == 2) return;
+	cluster_id[idx] = find_final_repres(idx, cluster_id);
+}
+
+extern "C" void post_cluster(int* label, int* cluster_id, int window_size, cudaStream_t stream) {
+	unsigned threadsPerBlock = 64;
+	unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
+	post_cluster_t <<<numOfBlocks, threadsPerBlock, 0, stream>>> (
+		label,
+		cluster_id,
+		window_size
 	);
 }
 
@@ -211,42 +272,6 @@ extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DA
 // 		}
 // 	}
 // }
-
-static __forceinline__ __device__ int find_repres(int v, int* cid) {
-    int par = cid[v];
-    if (par != v) {
-        int next, prev = v;
-        while (par > (next = cid[par])) {
-            cid[prev] = next;
-            prev = par;
-            par = next;
-        }
-    }
-    return par;
-}
-
-static __forceinline__ __device__ void unite(int ray_id, int primIdx, int* cid) {
-    int ray_rep = find_repres(ray_id, cid);
-    int prim_rep = find_repres(primIdx, cid);
-    bool repeat;
-    do { // 设置 core
-        repeat = false;
-        if (ray_rep != prim_rep) {
-            int ret;
-            if (ray_rep < prim_rep) {
-                if ((ret = atomicCAS(cid + prim_rep, prim_rep, ray_rep)) != prim_rep) {
-                    prim_rep = ret;
-                    repeat = true;
-                }
-            } else {
-                if ((ret = atomicCAS(cid + ray_rep, ray_rep, prim_rep)) != ray_rep) {
-                    ray_rep = ret;
-                    repeat = true;
-                }
-            }
-        }
-    } while (repeat);
-}
 
 __global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;

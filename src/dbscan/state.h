@@ -74,6 +74,7 @@ struct ScanState
     vector<DATA_TYPE>                   h_radii;
     vector<int>                         h_center_idx_in_window;
     vector<int>                         h_cell_point_num;
+    int*                                h_point_status;
 
     unsigned*                           h_ray_hits;
     unsigned*                           h_ray_intersections;
