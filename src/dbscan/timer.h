@@ -172,12 +172,13 @@ class Timer{
     cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
 
     cout << "[Time] update_grid: " << update_grid / query_num << " ms" << endl;
-    cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
-    cout << "[Time] set_label: " << set_label / query_num << " ms" << endl;
-    
     cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
     cout << "[Time] set_sparse_spheres: " << set_sparse_spheres / query_num << " ms" << endl;
     cout << "[Time] set_dense_spheres: " << set_dense_spheres / query_num << " ms" << endl;
+    cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
+    cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
+    cout << "[Time] set_label: " << set_label / query_num << " ms" << endl;
+    
     // cout << "[Time] whole_bvh: " << whole_bvh / query_num << " ms" << endl;
     cout << "[Time] hybrid_sphere: " << hybrid_sphere / query_num << " ms" << endl;
     cout << "[Time] build_hybrid_bvh: " << build_hybrid_bvh / query_num << " ms" << endl;
@@ -205,7 +206,6 @@ class Timer{
     cout << "[Time] get_centers_radii: " << get_centers_radii / query_num << " ms" << endl;
     cout << "[Time] compute_uniq_pos_arr: " << compute_uniq_pos_arr / query_num << " ms" << endl;
     cout << "[Time] set_centers_radii: " << set_centers_radii / query_num << " ms" << endl;
-    cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
     cout << endl;
 
     cout << "[Time] find_neighbors_of_cells: " << find_neighbors_of_cells / query_num << " ms" << endl;
