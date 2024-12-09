@@ -74,7 +74,12 @@ struct ScanState
     vector<DATA_TYPE>                   h_radii;
     vector<int>                         h_center_idx_in_window;
     vector<int>                         h_cell_point_num;
+    DATA_TYPE_3*                        h_centers_p;
+    // DATA_TYPE*                          h_radii_p;
+    int*                                h_center_idx_in_window_p;
+    int*                                h_cell_point_num_p;
     int*                                h_point_status;
+    int*                                h_big_sphere;
 
     unsigned*                           h_ray_hits;
     unsigned*                           h_ray_intersections;
@@ -128,7 +133,7 @@ void make_gas_by_sparse_points(ScanState &state, Timer &timer);
 void rebuild_gas(ScanState &state, int update_pos);
 void rebuild_gas(ScanState &state);
 void rebuild_gas_from_all_points_in_window(ScanState &state);
-void rebuild_gas_stride(ScanState &state, int update_pos);
+void rebuild_gas_stride(ScanState &state, int update_pos, const cudaStream_t &stream);
 void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle);
 void make_gas_by_cell_grid(ScanState &state);
 void make_gas_by_cell(ScanState &state, Timer &timer);

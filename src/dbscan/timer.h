@@ -57,6 +57,9 @@ class Timer{
   double find_neighbor_cells;
   double put_neighbor_cells_list;
   double prepare_for_points_in_dense_cells;
+  double set_label;
+  double set_sparse_spheres;
+  double set_dense_spheres;
 
   cudaEvent_t start1, stop1;
   cudaEvent_t start2, stop2;
@@ -127,6 +130,9 @@ class Timer{
     find_neighbor_cells = 0;
     put_neighbor_cells_list = 0;
     prepare_for_points_in_dense_cells = 0;
+    set_label = 0;
+    set_sparse_spheres = 0;
+    set_dense_spheres = 0;
   }
 
   void startTimer(double *t) {
@@ -165,15 +171,17 @@ class Timer{
     cout << "[Time] in_stride_bvh: " << in_stride_bvh / query_num << " ms" << endl;
     cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
 
-    cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
-    
     cout << "[Time] update_grid: " << update_grid / query_num << " ms" << endl;
-
+    cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
+    cout << "[Time] set_label: " << set_label / query_num << " ms" << endl;
+    
+    cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
+    cout << "[Time] set_sparse_spheres: " << set_sparse_spheres / query_num << " ms" << endl;
+    cout << "[Time] set_dense_spheres: " << set_dense_spheres / query_num << " ms" << endl;
     // cout << "[Time] whole_bvh: " << whole_bvh / query_num << " ms" << endl;
     cout << "[Time] hybrid_sphere: " << hybrid_sphere / query_num << " ms" << endl;
     cout << "[Time] build_hybrid_bvh: " << build_hybrid_bvh / query_num << " ms" << endl;
 
-    cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
     cout << "[Time] set_cluster_id: " << set_cluster_id / query_num << " ms" << endl;
     cout << "[Time] union_cluster_id: " << union_cluster_id / query_num << " ms" << endl;
     cout << "[Time] free_cell_points: " << free_cell_points / query_num << " ms" << endl;

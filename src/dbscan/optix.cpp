@@ -562,7 +562,7 @@ void rebuild_gas(ScanState &state) {
     CUDA_SYNC_CHECK();
 }
 
-void rebuild_gas_stride(ScanState &state, int update_pos) {
+void rebuild_gas_stride(ScanState &state, int update_pos, const cudaStream_t &stream) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
@@ -572,14 +572,14 @@ void rebuild_gas_stride(ScanState &state, int update_pos) {
              state.radius,
              state.stride_size,
              d_aabb + update_pos * state.stride_size,
-             state.stream);
+             stream);
     CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb + update_pos * state.stride_size);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.stride_size;
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &d_aabb_ptr;
 
     OPTIX_CHECK(optixAccelBuild(
                 state.context,
-                state.stream, // CUDA stream
+                stream, // CUDA stream
                 &accel_options,
                 &state.vertex_input,
                 1, // num build inputs
