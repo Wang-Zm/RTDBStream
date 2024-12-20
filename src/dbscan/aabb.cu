@@ -8,27 +8,27 @@ __global__ void kGenAABB_t (
       unsigned int N,
       OptixAabb* aabb
 ) {
-  unsigned int particleIndex = blockIdx.x * blockDim.x + threadIdx.x;
-  if (particleIndex >= N) return;
+	unsigned int particleIndex = blockIdx.x * blockDim.x + threadIdx.x;
+	if (particleIndex >= N) return;
 
-  double3 center = {points[particleIndex].x, points[particleIndex].y, points[particleIndex].z};
+	DATA_TYPE_3 center = {points[particleIndex].x, points[particleIndex].y, points[particleIndex].z};
 
-  // float3 m_min = center - radius;
-  // float3 m_max = center + radius;
-  float3 m_min;
-  float3 m_max;
-  m_min.x = center.x - radius;
-  m_min.y = center.y - radius;
-  m_min.z = center.z - radius;
-  m_max.x = center.x + radius;
-  m_max.y = center.y + radius;
-  m_max.z = center.z + radius;
+	// float3 m_min = center - radius;
+	// float3 m_max = center + radius;
+	float3 m_min;
+	float3 m_max;
+	m_min.x = center.x - radius;
+	m_min.y = center.y - radius;
+	m_min.z = center.z - radius;
+	m_max.x = center.x + radius;
+	m_max.y = center.y + radius;
+	m_max.z = center.z + radius;
 
-  aabb[particleIndex] =
-  {
-    m_min.x, m_min.y, m_min.z,
-    m_max.x, m_max.y, m_max.z
-  };
+	aabb[particleIndex] =
+	{
+		m_min.x, m_min.y, m_min.z,
+		m_max.x, m_max.y, m_max.z
+	};
 }
 
 extern "C" void kGenAABB(DATA_TYPE_3* points, DATA_TYPE width, unsigned numPrims, OptixAabb* d_aabb, cudaStream_t stream) {
@@ -43,10 +43,46 @@ extern "C" void kGenAABB(DATA_TYPE_3* points, DATA_TYPE width, unsigned numPrims
     );
 }
 
+__global__ void genAABB_hybrid_width_t (DATA_TYPE_3* points, DATA_TYPE radius1, DATA_TYPE radius2, unsigned N1, unsigned N2, OptixAabb* aabb) {
+	unsigned int particleIndex = blockIdx.x * blockDim.x + threadIdx.x;
+	if (particleIndex >= N2) return;
+
+	DATA_TYPE_3 center = {points[particleIndex].x, points[particleIndex].y, points[particleIndex].z};
+	DATA_TYPE radius = particleIndex < N1 ? radius1 : radius2;
+	float3 m_min;
+	float3 m_max;
+	m_min.x = center.x - radius;
+	m_min.y = center.y - radius;
+	m_min.z = center.z - radius;
+	m_max.x = center.x + radius;
+	m_max.y = center.y + radius;
+	m_max.z = center.z + radius;
+
+	aabb[particleIndex] =
+	{
+		m_min.x, m_min.y, m_min.z,
+		m_max.x, m_max.y, m_max.z
+	};
+}
+
+extern "C" void genAABB_hybrid_width(DATA_TYPE_3* points, DATA_TYPE width1, DATA_TYPE width2, unsigned N1, unsigned N2, OptixAabb* d_aabb, cudaStream_t stream) {
+  unsigned int threadsPerBlock = 64;
+  unsigned int numOfBlocks = (N2 + threadsPerBlock - 1) / threadsPerBlock;
+
+  genAABB_hybrid_width_t <<<numOfBlocks, threadsPerBlock, 0, stream>>> (
+    points,
+    width1,
+	width2,
+    N1,
+	N2,
+    d_aabb
+    );
+}
+
 __global__ void kGenAABB_by_center_t (DATA_TYPE_3* points, DATA_TYPE* radius, unsigned int N, OptixAabb* aabb) {
 	unsigned int particleIndex = blockIdx.x * blockDim.x + threadIdx.x;
 	if (particleIndex >= N) return;
-	double3 center = {points[particleIndex].x, points[particleIndex].y, points[particleIndex].z};
+	DATA_TYPE_3 center = {points[particleIndex].x, points[particleIndex].y, points[particleIndex].z};
 	float3 m_min;
 	float3 m_max;
 	m_min.x = center.x - radius[particleIndex];
@@ -374,9 +410,9 @@ __global__ void set_centers_radii_t(DATA_TYPE_3* window, DATA_TYPE radius, int* 
 		int dim_id_x = (window[i].x - min_value[0]) / cell_length;
 		int dim_id_y = (window[i].y - min_value[1]) / cell_length;
 		int dim_id_z = (window[i].z - min_value[2]) / cell_length;
-	    centers[idx] = { min_value[0] + (dim_id_x + 0.5) * cell_length, 
-						 min_value[1] + (dim_id_y + 0.5) * cell_length, 
-						 min_value[2] + (dim_id_z + 0.5) * cell_length };
+	    centers[idx] = { min_value[0] + (dim_id_x + 0.5f) * cell_length, 
+						 min_value[1] + (dim_id_y + 0.5f) * cell_length, 
+						 min_value[2] + (dim_id_z + 0.5f) * cell_length };
 		radii[idx] = 1.5 * radius;
 		cell_points[idx] = pos_arr + offset;
 		center_idx_in_window[idx] = i;

@@ -406,12 +406,12 @@ void make_gas_from_small_big_sphere(ScanState &state, Timer &timer) {
     cudaEventCreate(&start);
     cudaEventCreate(&end);
     cudaEventRecord(start);
-    OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
-    kGenAABB(state.params.centers + state.params.sparse_num, 
-             state.radius_one_half, 
-             state.params.dense_num, 
-             d_aabb + state.params.sparse_num, 
-             0);
+    // OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
+    // kGenAABB(state.params.centers + state.params.sparse_num, 
+    //          state.radius_one_half, 
+    //          state.params.dense_num, 
+    //          d_aabb + state.params.sparse_num, 
+    //          0);
 
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num; // 基于全部的 point 构建 BVH tree
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
@@ -454,14 +454,18 @@ void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
+    timer.startTimer(&timer.gen_aabb);
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
 #if OPTIMIZATION_LEVEL == 9
-    kGenAABB(state.params.centers, state.radius, state.params.sparse_num, d_aabb, 0);
+    // kGenAABB(state.params.centers, state.radius, state.params.sparse_num, d_aabb, 0);
+    genAABB_hybrid_width(state.params.centers, state.radius, state.radius_one_half, state.params.sparse_num, state.params.center_num, d_aabb, 0);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.sparse_num;
 #else
     kGenAABB(state.params.centers, state.radius, state.params.center_num, d_aabb, 0);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
 #endif
+    CUDA_SYNC_CHECK();
+    timer.stopTimer(&timer.gen_aabb);
 
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
     OptixAccelBufferSizes gas_buffer_sizes;

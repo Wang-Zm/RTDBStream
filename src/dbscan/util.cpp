@@ -33,9 +33,14 @@ void read_data_from_tao(string& data_file, ScanState &state) {
         state.max_value[dim_id] = -FLT_MAX;
         state.min_value[dim_id] = FLT_MAX;
     }
+    double xx, yy, zz;
     for (int rid = 0; rid < state.data_num; rid++) {
         getline(fin, line);
-        sscanf(line.c_str(), "%lf,%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y, &state.h_data[rid].z);
+        // sscanf(line.c_str(), "%lf,%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y, &state.h_data[rid].z);
+        sscanf(line.c_str(), "%lf,%lf,%lf", &xx, &yy, &zz);
+        state.h_data[rid].x = xx;
+        state.h_data[rid].y = yy;
+        state.h_data[rid].z = zz;
         if (state.max_value[0] < state.h_data[rid].x) {
             state.max_value[0] = state.h_data[rid].x;
         }
@@ -81,12 +86,19 @@ void read_data_from_geolife(string& data_file, ScanState &state) {
         state.max_value[dim_id] = -FLT_MAX;
         state.min_value[dim_id] = FLT_MAX;
     }
+    double3 record;
     for (int rid = 0; rid < state.data_num; rid++) {
         // getline(fin, line);
         // sscanf(line.c_str(), "%lf,%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y, &state.h_data[rid].z);
-        fin.read((char *) &state.h_data[rid].x, sizeof(double));
-        fin.read((char *) &state.h_data[rid].y, sizeof(double));
-        fin.read((char *) &state.h_data[rid].z, sizeof(double));
+        fin.read((char *) &record.x, sizeof(double));
+        fin.read((char *) &record.y, sizeof(double));
+        fin.read((char *) &record.z, sizeof(double));
+        // fin.read((char *) &state.h_data[rid].x, sizeof(double));
+        // fin.read((char *) &state.h_data[rid].y, sizeof(double));
+        // fin.read((char *) &state.h_data[rid].z, sizeof(double));
+        state.h_data[rid].x = record.x;
+        state.h_data[rid].y = record.y;
+        state.h_data[rid].z = record.z;
         if (state.max_value[0] < state.h_data[rid].x) {
             state.max_value[0] = state.h_data[rid].x;
         }
@@ -133,9 +145,13 @@ void read_data_from_rbf(string& data_file, ScanState &state) {
         state.min_value[dim_id] = FLT_MAX;
     }
     getline(fin, line); // read the unused line
+    double xx, yy;
     for (int rid = 0; rid < state.data_num; rid++) {
         getline(fin, line);
-        sscanf(line.c_str(), "%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y);
+        // sscanf(line.c_str(), "%lf,%lf", &state.h_data[rid].x, &state.h_data[rid].y);
+        sscanf(line.c_str(), "%lf,%lf", &xx, &yy);
+        state.h_data[rid].x = xx;
+        state.h_data[rid].y = yy;
         state.h_data[rid].z = 0;
         if (state.max_value[0] < state.h_data[rid].x) {
             state.max_value[0] = state.h_data[rid].x;
@@ -177,9 +193,13 @@ void read_data_from_eds(string& data_file, ScanState &state) {
     }
     getline(fin, line); // read the unused line
     int id, cid;
+    double xx, yy;
     for (int rid = 0; rid < state.data_num; rid++) {
         getline(fin, line);
-        sscanf(line.c_str(), "%d %lf %lf %d", &id, &state.h_data[rid].x, &state.h_data[rid].y, &cid);
+        // sscanf(line.c_str(), "%d %lf %lf %d", &id, &state.h_data[rid].x, &state.h_data[rid].y, &cid);
+        sscanf(line.c_str(), "%d %lf %lf %d", &id, &xx, &yy, &cid);
+        state.h_data[rid].x = xx;
+        state.h_data[rid].y = yy;
         state.h_data[rid].z = 0;
         if (state.max_value[0] < state.h_data[rid].x) {
             state.max_value[0] = state.h_data[rid].x;
@@ -218,9 +238,12 @@ void read_data_from_stk(string& data_file, ScanState &state) {
         state.min_value[dim_id] = FLT_MAX;
     }
     getline(fin, line); // read the unused line
+    double record;
     for (int rid = 0; rid < state.data_num; rid++) {
         getline(fin, line);
-        sscanf(line.c_str(), "%lf", &state.h_data[rid].x);
+        // sscanf(line.c_str(), "%lf", &state.h_data[rid].x);
+        sscanf(line.c_str(), "%lf", &record);
+        state.h_data[rid].x = record;
         state.h_data[rid].y = 0;
         state.h_data[rid].z = 0;
         if (state.max_value[0] < state.h_data[rid].x) {

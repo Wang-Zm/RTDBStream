@@ -22,6 +22,7 @@ class Timer{
   double hybrid_sphere;
   double build_hybrid_bvh;
 
+  double input_data;
   double pre_process;
   double update_grid;
   double early_cluster;
@@ -60,6 +61,9 @@ class Timer{
   double set_label;
   double set_sparse_spheres;
   double set_dense_spheres;
+  double gen_aabb;
+  double merge_pos_arr;
+  double sort_new_stride;
 
   cudaEvent_t start1, stop1;
   cudaEvent_t start2, stop2;
@@ -95,6 +99,7 @@ class Timer{
     hybrid_sphere = 0;
     build_hybrid_bvh = 0;
 
+    input_data = 0;
     pre_process = 0;
     update_grid = 0;
     early_cluster = 0;
@@ -133,6 +138,9 @@ class Timer{
     set_label = 0;
     set_sparse_spheres = 0;
     set_dense_spheres = 0;
+    gen_aabb = 0;
+    merge_pos_arr = 0;
+    sort_new_stride = 0;
   }
 
   void startTimer(double *t) {
@@ -171,11 +179,17 @@ class Timer{
     cout << "[Time] in_stride_bvh: " << in_stride_bvh / query_num << " ms" << endl;
     cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
 
+    cout << "[Time] input_data: " << input_data / query_num << " ms" << endl;
     cout << "[Time] update_grid: " << update_grid / query_num << " ms" << endl;
+    cout << "[Time]  update_h_point_cell_id: " << update_h_point_cell_id / query_num << " ms" << endl;
+    cout << "[Time]  sort_h_point_cell_id: " << sort_h_point_cell_id / query_num << " ms" << endl;
+    cout << "[Time]   sort_new_stride: " << sort_new_stride / query_num << " ms" << endl;
+    cout << "[Time]  merge_pos_arr: " << merge_pos_arr / query_num << " ms" << endl;
     cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
     cout << "[Time] set_sparse_spheres: " << set_sparse_spheres / query_num << " ms" << endl;
     cout << "[Time] set_dense_spheres: " << set_dense_spheres / query_num << " ms" << endl;
     cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
+    cout << "[Time] gen_aabb: " << gen_aabb / query_num << " ms" << endl;
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;
     cout << "[Time] set_label: " << set_label / query_num << " ms" << endl;
     
@@ -201,8 +215,6 @@ class Timer{
     cout << "[Time] dense_cell_points_copy: " << dense_cell_points_copy / query_num << " ms" << endl;
     cout << "[Time] cell_points_memcpy: " << cell_points_memcpy / query_num << " ms" << endl;
 
-    cout << "[Time] update_h_point_cell_id: " << update_h_point_cell_id / query_num << " ms" << endl;
-    cout << "[Time] sort_h_point_cell_id: " << sort_h_point_cell_id / query_num << " ms" << endl;
     cout << "[Time] get_centers_radii: " << get_centers_radii / query_num << " ms" << endl;
     cout << "[Time] compute_uniq_pos_arr: " << compute_uniq_pos_arr / query_num << " ms" << endl;
     cout << "[Time] set_centers_radii: " << set_centers_radii / query_num << " ms" << endl;

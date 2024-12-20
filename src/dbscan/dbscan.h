@@ -6,8 +6,10 @@
 
 #define OPTIMIZATION_LEVEL 9 // 2 无用，early cluster 无效果
 
-typedef double DATA_TYPE;
-typedef double3 DATA_TYPE_3;
+// typedef double DATA_TYPE;
+// typedef double3 DATA_TYPE_3;
+typedef float DATA_TYPE;
+typedef float3 DATA_TYPE_3;
 typedef long CELL_ID_TYPE;
 
 struct Params {
@@ -37,7 +39,7 @@ struct Params {
     DATA_TYPE*              min_value;
     int*                    cell_count;
     DATA_TYPE               cell_length;
-    int*                    point_cell_id;
+    CELL_ID_TYPE*           point_cell_id;
     int*                    center_idx_in_window;
 
     DATA_TYPE               radius;
@@ -93,6 +95,7 @@ struct HitGroupData
 };
 
 extern "C" void kGenAABB(DATA_TYPE_3 *points, DATA_TYPE radius, unsigned numPrims, OptixAabb *d_aabb, cudaStream_t stream);
+extern "C" void genAABB_hybrid_width(DATA_TYPE_3* points, DATA_TYPE width1, DATA_TYPE width2, unsigned N1, unsigned N2, OptixAabb* d_aabb, cudaStream_t stream);
 extern "C" void kGenAABB_by_center(DATA_TYPE_3* points, DATA_TYPE* width, unsigned numPrims, OptixAabb* d_aabb, cudaStream_t stream);
 extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts, cudaStream_t stream);
 // extern "C" void union_cluster(int* tmp_cluster_id, int* cluster_id, int* label, int window_size);

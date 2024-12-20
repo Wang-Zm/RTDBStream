@@ -47,6 +47,7 @@ static __forceinline__ __device__ DATA_TYPE compute_dist(int ray_id, int primIdx
     const DATA_TYPE_3 point    = prim_points[primIdx];
     DATA_TYPE_3 O = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
     DATA_TYPE sqdist = O.x * O.x + O.y * O.y + O.z * O.z;
+    // DATA_TYPE sqdist = (ray_orig.x - point.x) * (ray_orig.x - point.x);
     return sqdist;
 }
 
@@ -153,11 +154,15 @@ extern "C" __global__ void __raygen__identify_cores() {
 
 extern "C" __global__ void __raygen__grid() {
     // Lookup our location within the launch grid
-    const uint3 idx = optixGetLaunchIndex();    
+    const uint3 idx = optixGetLaunchIndex();
+    // int pos = params.pos_arr[idx.x];    
 
     // Map our launch idx to a screen location and create a ray from the camera
     // location through the screen 
     float3 ray_origin, ray_direction;
+    // ray_origin    = { float(params.window[pos].x), 
+    //                   float(params.window[pos].y),
+    //                   float(params.window[pos].z) };
     ray_origin    = { float(params.window[idx.x].x), 
                       float(params.window[idx.x].y),
                       float(params.window[idx.x].z) };
@@ -166,6 +171,7 @@ extern "C" __global__ void __raygen__grid() {
     // Trace the ray against our scene hierarchy
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
+    // unsigned int ray_id  = pos;
     unsigned int ray_id  = idx.x;
     unsigned int op      = 0; // 占空
     optixTrace(
@@ -247,10 +253,14 @@ extern "C" __global__ void __intersection__identify_cores() {
 
 extern "C" __global__ void __intersection__grid() {
     unsigned primIdx = optixGetPrimitiveIndex();
-    unsigned ray_id  = optixGetPayload_2();
 #if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
 #endif
+    // 如果 primIdx 邻居数量超过了 minPts 个，可以直接跳过了
+    if (params.nn[primIdx] >= params.min_pts)
+        return;
+
+    unsigned ray_id  = optixGetPayload_2();
     DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
     if (sqdist < params.radius2) {
         atomicAdd(params.nn + primIdx, 1);
@@ -273,17 +283,20 @@ extern "C" __global__ void __raygen__cluster() {
     if (params.label[idx.x] != 0) return; // * 从 core 发射光线 
 
     // Map our launch idx to a screen location and create a ray from the camera location through the screen 
-    float3 ray_origin, ray_direction;
-    ray_origin    = { float(params.window[idx.x].x), 
-                      float(params.window[idx.x].y),
-                      float(params.window[idx.x].z) };
-    ray_direction = { 1, 0, 0 };
+    // float3 ray_origin, ray_direction;
+    // ray_origin    = { float(params.window[idx.x].x), 
+    //                   float(params.window[idx.x].y),
+    //                   float(params.window[idx.x].z) };
+    float3& ray_origin   = params.window[idx.x];
+    float3 ray_direction = { 1, 0, 0 };
 
     // Trace the ray against our scene hierarchy
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
     unsigned int ray_id  = idx.x;
-    unsigned int op      = 0;   // 占空 // TODO：可记录是否是 sparse point
+    // unsigned int op      = params.point_cell_id[ray_id];   // 占空
+    unsigned int op      = 0;   // 占空
+    // unsigned int op      = params.point_status[ray_id];   // 占空 // TODO：可记录是否是 sparse point，这个状态可以用
     optixTrace(
             params.handle,      // 应当是针对 cores 构建的树，此时为方便，可直接基于当前窗口构建树
             ray_origin,
@@ -341,15 +354,17 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned ray_id  = optixGetPayload_2();
 
     // TODO：考虑设置 sparse point 的光线不遇到大球：1.设置 ray_id 是否是 sparse 放到 Payload 中，如果是 sparse ray 直接跳过
+    // TODO：dense cell 也可以避免计算，比如遇到了 cell_id 更大的球，可以直接规避，不计算距离
+
+    int prim_idx_in_window = params.center_idx_in_window[primIdx];
+    if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) 
+        return;
 
     // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
     if (params.cell_point_num[primIdx] < params.min_pts) { // Eps-radius sphere
-        // 先判别是否已经是同一 cluster
-        int prim_idx_in_window = params.center_idx_in_window[primIdx];
         // if (prim_idx_in_window > ray_id) { // * Avoid calculating repeatedly
         //     return;
         // }
-        if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
         DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
         if (sqdist >= params.radius2) return;
         if (params.label[prim_idx_in_window] == 0) {
@@ -361,13 +376,19 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
             }
         }
     } else { // 1.5Eps-radius sphere
-        int prim_idx_in_window = params.center_idx_in_window[primIdx]; // primIdx 是 window 中第一个属于该 cell 中的点的 idx，可以视为该 cell 的代表点
-        if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) return; // 同一 cluster
+        // if (optixGetPayload_3() == 1) {
+        //     return;
+        // }
+
+        // 如果 ray 的 cell_id 更靠前，那么直接跳过，不再计算
+        // if (params.point_cell_id[prim_idx_in_window] > optixGetPayload_3()) return;
         int *points_in_cell = params.cell_points[primIdx];
-        for (int i = 0; i < params.cell_point_num[primIdx]; i++) {
-            // if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id)) break; // 不用每次都判别，可以减少很多时间。
+        int num_points = params.cell_point_num[primIdx];
+        for (int i = 0; i < num_points; i++) {
+            // if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id))
+            //     break;
             DATA_TYPE dist = compute_dist(ray_id, points_in_cell[i], params.window, params.window);
-            if (dist < params.radius2) { // 合并 ray_origin 与该 cell
+            if (dist < params.radius2) {
                 unite(ray_id, points_in_cell[i], params.cluster_id);
                 break;
             }

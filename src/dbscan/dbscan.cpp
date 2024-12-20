@@ -18,6 +18,12 @@
 #include <queue>
 #include <thread>
 #include <omp.h>
+#include <execution>
+// #include <parallel/algorithm>
+#include <thrust/device_vector.h>
+#include <thrust/sort.h>
+#include <thrust/for_each.h>
+#include <thrust/execution_policy.h>
 
 #include "state.h"
 #include "timer.h"
@@ -55,7 +61,7 @@ void initialize_params(ScanState &state) {
 
     CUDA_CHECK(cudaMalloc(&state.params.centers, state.window_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(&state.params.radii, state.window_size * sizeof(DATA_TYPE)));
-    CUDA_CHECK(cudaMalloc(&state.params.point_cell_id, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.point_cell_id, state.window_size * sizeof(CELL_ID_TYPE)));
     CUDA_CHECK(cudaMalloc(&state.params.center_idx_in_window, state.window_size * sizeof(int)));
     state.h_point_cell_id = (CELL_ID_TYPE*) malloc(state.window_size * sizeof(CELL_ID_TYPE));
 
@@ -219,9 +225,9 @@ void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
             int dim_id_x = (state.h_window[i].x - state.min_value[0]) / state.cell_length;
             int dim_id_y = (state.h_window[i].y - state.min_value[1]) / state.cell_length;
             int dim_id_z = (state.h_window[i].z - state.min_value[2]) / state.cell_length;
-            DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5) * state.cell_length, 
-                                   state.min_value[1] + (dim_id_y + 0.5) * state.cell_length, 
-                                   state.min_value[2] + (dim_id_z + 0.5) * state.cell_length };
+            DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5f) * state.cell_length, 
+                                   state.min_value[1] + (dim_id_y + 0.5f) * state.cell_length, 
+                                   state.min_value[2] + (dim_id_z + 0.5f) * state.cell_length };
             state.h_centers.push_back(center);
             state.h_radii.push_back(state.radius_one_half);
             state.h_center_idx_in_window.push_back(i);
@@ -389,10 +395,6 @@ void set_centers_sparse_without_vector(ScanState &state) {
 
 void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放到 GPU 中，可提升性能
     timer.startTimer(&timer.early_cluster);
-    // state.h_centers.clear();
-    // state.h_center_idx_in_window.clear();
-    // state.h_cell_point_num.clear();
-    // vector<int> big_sphere; // 记录大球中的第一个点在 pos_arr 中的下标
     int *pos_arr = state.pos_arr;
     int j = 0;
     int num_sparse_centers = 0, num_dense_centers = 0;
@@ -406,11 +408,9 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
         CELL_ID_TYPE cell_id = state.h_point_cell_id[pos_arr[j]];
         int point_num = state.cell_point_num[cell_id];
         if (point_num < state.min_pts) {
-            int pos_arr_start = j;
+            // int pos_arr_start = j;
             for (int k = 0; k < point_num; k++) {
                 state.h_cluster_id[pos_arr[j]] = pos_arr[j];
-                // state.h_centers.push_back(state.h_window[pos_arr[j]]);
-                // state.h_cell_point_num.push_back(1);
                 state.h_centers_p[num_sparse_centers] = state.h_window[pos_arr[j]];
                 state.h_cell_point_num_p[num_sparse_centers] = 1;
                 state.h_center_idx_in_window_p[num_sparse_centers] = pos_arr[j];
@@ -418,9 +418,7 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
                 // state.h_point_status[pos_arr[j]] = 1; // Sparse point
                 j++;
             }
-            // state.h_center_idx_in_window.insert(state.h_center_idx_in_window.end(), pos_arr + pos_arr_start, pos_arr + j);
         } else {
-            // big_sphere.push_back(j); // * 记录的是在 pos_arr 中的下标
             state.h_big_sphere[num_dense_centers++] = j;
             int id = pos_arr[j];
             for (int k = 0; k < point_num; k++) {
@@ -430,30 +428,12 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
             }
         }
     }
-    // state.params.sparse_num = state.h_centers.size();
     state.params.sparse_num = num_sparse_centers;
     // printf("state.params.sparse_num = %d\n", state.params.sparse_num);
     timer.stopTimer(&timer.set_sparse_spheres);
 
     timer.startTimer(&timer.set_dense_spheres);
     int idx = state.params.sparse_num;
-    // for (int& pos_idx : big_sphere) { // 将 dense cell 放到数组里
-    //     int pos = pos_arr[pos_idx];
-    //     CELL_ID_TYPE cell_id = state.h_point_cell_id[pos];
-    //     int point_num = state.cell_point_num[cell_id];
-    //     DATA_TYPE_3& point = state.h_window[pos];
-    //     int dim_id_x = (point.x - state.min_value[0]) / state.cell_length;
-    //     int dim_id_y = (point.y - state.min_value[1]) / state.cell_length;
-    //     int dim_id_z = (point.z - state.min_value[2]) / state.cell_length;
-    //     DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5) * state.cell_length, 
-    //                            state.min_value[1] + (dim_id_y + 0.5) * state.cell_length, 
-    //                            state.min_value[2] + (dim_id_z + 0.5) * state.cell_length };
-    //     state.h_centers.push_back(center);
-    //     state.h_center_idx_in_window.push_back(pos); // 代表大球的 id
-    //     state.h_cell_point_num.push_back(point_num);
-    //     state.d_cell_points[idx] = state.params.pos_arr + pos_idx; // 索引
-    //     idx++;
-    // }
     for (int i = 0; i < num_dense_centers; i++) { // 将 dense cell 放到数组里
         int pos_idx = state.h_big_sphere[i];
         int pos = pos_arr[pos_idx];
@@ -463,12 +443,9 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
         int dim_id_x = (point.x - state.min_value[0]) / state.cell_length;
         int dim_id_y = (point.y - state.min_value[1]) / state.cell_length;
         int dim_id_z = (point.z - state.min_value[2]) / state.cell_length;
-        DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5) * state.cell_length, 
-                               state.min_value[1] + (dim_id_y + 0.5) * state.cell_length, 
-                               state.min_value[2] + (dim_id_z + 0.5) * state.cell_length };
-        // state.h_centers.push_back(center);
-        // state.h_center_idx_in_window.push_back(pos); // 代表大球的 id
-        // state.h_cell_point_num.push_back(point_num);
+        DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5f) * state.cell_length, 
+                               state.min_value[1] + (dim_id_y + 0.5f) * state.cell_length, 
+                               state.min_value[2] + (dim_id_z + 0.5f) * state.cell_length };
         state.h_centers_p[num_sparse_centers] = center;
         state.h_center_idx_in_window_p[num_sparse_centers] = pos;
         state.h_cell_point_num_p[num_sparse_centers] = point_num;
@@ -476,22 +453,14 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
         state.d_cell_points[idx] = state.params.pos_arr + pos_idx; // 索引
         idx++;
     }
-    // state.params.center_num = state.h_centers.size();
-    // state.params.dense_num = big_sphere.size();
     state.params.center_num = num_sparse_centers;
     state.params.dense_num = num_dense_centers;
     timer.stopTimer(&timer.set_dense_spheres);
     
-    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
-    // CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-    // CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
-    //                       state.h_center_idx_in_window.data(), 
-    //                       state.h_center_idx_in_window.size() * sizeof(int), 
-    //                       cudaMemcpyHostToDevice));
-    // CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, 
-    //                       state.h_cell_point_num.data(), 
-    //                       state.h_cell_point_num.size() * sizeof(int), 
-    //                       cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, 
+                          state.pos_arr, 
+                          state.window_size * sizeof(int), 
+                          cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.centers, 
                           state.h_centers_p, 
                           num_sparse_centers * sizeof(DATA_TYPE_3), 
@@ -529,7 +498,7 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
     timer.startTimer(&timer.update_h_point_cell_id);
     for (int i = window_left; i < window_left + state.stride_size; i++) {
         CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // TODO: Can be implemented in GPU 
-        state.cell_point_num[cell_id]--; // TODO: Use GPU's hashtable to maintain cell_point_num
+        state.cell_point_num[cell_id]--;
     }
     int pos_start = update_pos * state.stride_size - window_right;
     for (int i = window_right; i < window_right + state.stride_size; i++) {
@@ -537,6 +506,7 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
         state.cell_point_num[cell_id]++;
         state.h_point_cell_id[pos_start + i] = cell_id;
     }
+    // update_grid(state, update_pos, window_left, window_right);
     timer.stopTimer(&timer.update_h_point_cell_id);
 
     // 2.对 h_point_cell_id 排序，返回 pos_array
@@ -544,18 +514,45 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
     int *pos_arr = state.pos_arr;
     CELL_ID_TYPE *point_cell_id = state.h_point_cell_id;
 
+    // * 对整个 pos_arr 进行排序
+    // std::sort(pos_arr, pos_arr + state.window_size, 
+    //      [&point_cell_id](size_t i1, size_t i2) { 
+    //         return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
+    //      });
+    
     // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     int *new_pos_arr = state.new_pos_arr;
     int stride_left = update_pos * state.stride_size;
     for (int i = stride_left; i < stride_left + state.stride_size; i++) {
         new_pos_arr[i - stride_left] = i;
     }
-    sort(new_pos_arr, new_pos_arr + state.stride_size, 
+    timer.startTimer(&timer.sort_new_stride);
+    std::sort(new_pos_arr, new_pos_arr + state.stride_size, 
          [&point_cell_id](size_t i1, size_t i2) { 
             return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
          });
-    // timer.stopTimer(&timer.sort_h_point_cell_id);
+    
+    // * 并行排序。结果：排序性能提高，但是其他部分性能降低
+    // omp_set_num_threads(32);
+    // std::sort(std::execution::par_unseq, new_pos_arr, new_pos_arr + state.stride_size, 
+    //      [&point_cell_id](size_t i1, size_t i2) { 
+    //         return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
+    //      });
+    // omp_set_num_threads(1);
 
+    // * gnu 并行排序方法
+    // omp_set_num_threads(32);
+    // __gnu_parallel::sort(new_pos_arr, new_pos_arr + state.stride_size, 
+    //     [&point_cell_id](size_t i1, size_t i2) { 
+    //         return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
+    // });
+    // omp_set_num_threads(1);
+    // * 分离编译
+    // sort_stride(new_pos_arr, state.stride_size, point_cell_id);
+    timer.stopTimer(&timer.sort_new_stride);
+    timer.stopTimer(&timer.sort_h_point_cell_id);
+
+    timer.startTimer(&timer.merge_pos_arr);
     int i1 = 0, i2 = 0, i3 = 0;
     int *tmp_pos_arr = state.tmp_pos_arr;
     while (i1 < state.window_size && i2 < state.stride_size) {
@@ -584,6 +581,55 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
     }
     memcpy(tmp_pos_arr + i3, new_pos_arr + i2, (state.stride_size - i2) * sizeof(int));
     memcpy(pos_arr, tmp_pos_arr, state.window_size * sizeof(int));
+    timer.stopTimer(&timer.merge_pos_arr);
+}
+
+void update_grid_thrust(ScanState &state, int update_pos, int window_left, int window_right) {    
+    // 1.更新 h_point_cell_id
+    timer.startTimer(&timer.update_h_point_cell_id);
+    for (int i = window_left; i < window_left + state.stride_size; i++) {
+        CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // TODO: Can be implemented in GPU 
+        state.cell_point_num[cell_id]--;
+    }
+    int pos_start = update_pos * state.stride_size - window_right;
+    for (int i = window_right; i < window_right + state.stride_size; i++) {
+        CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.cell_point_num[cell_id]++;
+        state.h_point_cell_id[pos_start + i] = cell_id;
+    }
+    timer.stopTimer(&timer.update_h_point_cell_id);
+
+    // 2.对 h_point_cell_id 排序，返回 pos_array
+    timer.startTimer(&timer.sort_h_point_cell_id);
+    // * 放到 GPU 中对 pos_arr 排序
+    // thrust::for_each(thrust::device, state.params.pos_arr, state.params.pos_arr + state.window_size,
+    //                  [] __host__ __device__ (int& x, size_t i) {
+    //                     x = i; // 将每个元素设置为其下标值
+    //                 });
+    for (int i = 0; i < state.window_size; i++) {
+        state.pos_arr[i] = i;
+    }
+    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, 
+                          state.pos_arr, 
+                          state.window_size * sizeof(int), 
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, 
+                          state.h_point_cell_id, 
+                          state.window_size * sizeof(CELL_ID_TYPE), 
+                          cudaMemcpyHostToDevice));
+    // thrust::device_ptr<int> d_pos_arr = thrust::device_pointer_cast(state.params.pos_arr);
+    // thrust::device_ptr<int> d_point_cell_id = thrust::device_pointer_cast(state.params.point_cell_id);
+    // thrust::sort(d_pos_arr, d_pos_arr + state.window_size, 
+    //              [point_cell_id = state.params.point_cell_id] __device__ (size_t i1, size_t i2) { 
+    //                 return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2]; 
+    //                 // return point_cell_id[i1] < point_cell_id[i2]; 
+    //             });
+    // thrust::sort(d_pos_arr, d_pos_arr + state.window_size);
+    CUDA_CHECK(cudaMemcpy(state.pos_arr, 
+                          state.params.pos_arr, 
+                          state.window_size * sizeof(int), 
+                          cudaMemcpyDeviceToHost));
+    // cudaFree(d_point_cell_id);
     timer.stopTimer(&timer.sort_h_point_cell_id);
 }
 
@@ -603,9 +649,9 @@ void get_centers_radii_device(ScanState &state) {
             int dim_id_x = (state.h_window[i].x - state.min_value[0]) / state.cell_length;
             int dim_id_y = (state.h_window[i].y - state.min_value[1]) / state.cell_length;
             int dim_id_z = (state.h_window[i].z - state.min_value[2]) / state.cell_length;
-            DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5) * state.cell_length, 
-                                   state.min_value[1] + (dim_id_y + 0.5) * state.cell_length, 
-                                   state.min_value[2] + (dim_id_z + 0.5) * state.cell_length };
+            DATA_TYPE_3 center = { state.min_value[0] + (dim_id_x + 0.5f) * state.cell_length, 
+                                   state.min_value[1] + (dim_id_y + 0.5f) * state.cell_length, 
+                                   state.min_value[2] + (dim_id_z + 0.5f) * state.cell_length };
             state.h_centers.push_back(center);
             state.h_radii.push_back(state.radius_one_half);
             cell_repres[cell_id] = i;
@@ -832,13 +878,7 @@ void find_neighbors_of_cells(ScanState &state) {
     neighbor_cells_list.clear();
     neighbor_cells_capacity.clear();
     unordered_map<CELL_ID_TYPE, pair<int, int>> neighbor_cells_pos_and_num;
-    for (auto& item : neighbor_cells_of_dense_cells) { // List in cell_id's order
-        neighbor_cells_pos_and_num[item.first] = {neighbor_cells_list.size(), item.second.size()};
-        for (CELL_ID_TYPE& cell_id : item.second) {
-            neighbor_cells_list.push_back(state.pos_of_cell[cell_id]);
-            neighbor_cells_capacity.push_back(state.cell_point_num[cell_id]);
-        }
-    }
+      
     // 将 neighbor_cells_list 和 neighbor_cells_capacity 放到邻居列表中
     CUDA_CHECK(cudaMemcpy(state.params.d_neighbor_cells_list, 
                           neighbor_cells_list.data(), 
@@ -994,38 +1034,6 @@ void cluster_dense_cells_cpu_check(ScanState &state) {
         find(i, cid);
     }
     printf("cluster_dense_cells_cpu done!\n");
-}
-
-void cluster_dense_cells_cpu(ScanState &state) {
-    // 用 map 记录每个 cell_id 在 pos_arr 中的起始位置
-    map<CELL_ID_TYPE, int> start_pos_of_cell;
-    for (int i = 0; i < state.window_size;) {
-        CELL_ID_TYPE cell_id = state.h_point_cell_id[state.pos_arr[i]];
-        int point_num = state.cell_point_num[cell_id];
-        if (point_num >= state.min_pts) {
-            start_pos_of_cell[cell_id] = i;
-        }
-        i += point_num;
-    }
-
-    // 以 cell 为粒度进行 CPU 中的聚类
-    int i = 0;
-    int* pos_arr = state.pos_arr;
-    int* cid = state.h_cluster_id;
-    while (i < state.window_size) {
-        CELL_ID_TYPE cell_id = state.h_point_cell_id[i];
-        int point_num = state.cell_point_num[cell_id];
-        if (point_num < state.min_pts) {
-            i += point_num;
-            continue;
-        }
-        // TODO: 找到 cell_id 的邻居
-
-        // TODO: 当前 cell 中的点依次和邻居中的点进行距离计算/聚类
-
-    }
-
-    // 预期结果：dense cell 中的点进行了聚类
 }
 
 void search_cuda(ScanState &state) {
@@ -2027,18 +2035,23 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
+    // omp_set_num_threads(1);
     while (remaining_data_num >= state.stride_size) {
         timer.startTimer(&timer.total);
         timer.startTimer(&timer.pre_process);
+        
+        timer.startTimer(&timer.input_data);
         memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         CUDA_CHECK(cudaMemcpy(state.params.window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+        timer.stopTimer(&timer.input_data);
         
         timer.startTimer(&timer.update_grid);
         update_grid_without_vector(state, update_pos, window_left, window_right);
+        // update_grid_thrust(state, update_pos, window_left, window_right);
         timer.stopTimer(&timer.update_grid);
         
-        timer.startTimer(&timer.build_bvh);
         set_hybrid_aabb(state);
+        timer.startTimer(&timer.build_bvh);
         make_gas_by_sparse_points(state, timer);
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.build_bvh);
@@ -2156,7 +2169,7 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
-        printf("[Step] Finish window %d\n", stride_num);
+        // printf("[Step] Finish window %d\n", stride_num);
     }
     printf("[Step] Finish sliding the window...\n");
 }
