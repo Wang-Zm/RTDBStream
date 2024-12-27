@@ -91,7 +91,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # As of CMake 2.6 policies were introduced in order to provide a mechanism for
 # adding backwards compatibility one feature at a time.  We will just specify
 # that all policies will use version 2.8.12 semantics.
-cmake_policy(VERSION 2.8.12)
+cmake_policy(VERSION 3.5)
 
 if( POLICY CMP0072 )
   # FindOpenGL prefers GLVND by default when available
@@ -134,17 +134,6 @@ include (Macros)
 include (CompilerInfo)
 # Check for specific machine/compiler options.
 include (ConfigCompilerFlags)
-# include (CPM)
-
-# CPMAddPackage(
-#   NAME cuco
-#   GITHUB_REPOSITORY NVIDIA/cuCollections
-#   GIT_TAG dev
-#   OPTIONS
-#      "BUILD_TESTS OFF"
-#      "BUILD_BENCHMARKS OFF"
-#      "BUILD_EXAMPLES OFF"
-# )
 
 # Turn off the warning that NVCC issues when generating PTX from our CUDA samples.  This
 # is a custom extension to the FindCUDA code distributed by CMake.
@@ -305,7 +294,7 @@ else( WIN32 )
   endif()
 endif( WIN32 )
 
-set(SAMPLES_CUDA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cuda")
+# set(SAMPLES_CUDA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cuda")
 
 # set(SAMPLES_SUPPORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/support")
 
@@ -335,7 +324,7 @@ include_directories( ${CMAKE_CURRENT_SOURCE_DIR}
                      ${CUDA_INCLUDE_DIRS}
                      )
 
-set(SAMPLES_CUDA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cuda)
+# set(SAMPLES_CUDA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cuda)
 
 # Helper macro to generate PTX from the CUDA files in sutil.
 macro(OPTIX_sutil_compile_to_optix_input generated_files)

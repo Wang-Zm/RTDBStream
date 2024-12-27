@@ -21,10 +21,10 @@ target_link_libraries( ${target_name}
 
     
 # 查找 OpenMP
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
-  message(STATUS "OpenMP found, enabling parallelization.")
-  target_link_libraries(${target_name} OpenMP::OpenMP_CXX)
-else()
-  message(WARNING "OpenMP not found, parallelization will not be enabled.")
-endif()
+# find_package(OpenMP)
+# if(OpenMP_CXX_FOUND)
+#   message(STATUS "OpenMP found, enabling parallelization.")
+#   target_link_libraries(${target_name} OpenMP::OpenMP_CXX)
+# else()
+#   message(WARNING "OpenMP not found, parallelization will not be enabled.")
+# endif()

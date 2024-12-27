@@ -544,3 +544,177 @@ __global__ void prepare_for_points_in_dense_cells_t(int* pos_arr,
 													int* d_neighbor_cells_capacity) {
 	
 }
+
+__global__ void compute_offsets_of_cells_kernel(
+	int n,
+	int* pos_arr,
+	CELL_ID_TYPE* point_cell_idx,
+	int* offsets,
+	int* num_offsets
+) {
+	int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx <= n) {
+        bool is_cell_first_index = (idx == 0 || point_cell_idx[pos_arr[idx]] != point_cell_idx[pos_arr[idx - 1]] || idx == n);
+        if (is_cell_first_index) {
+            int old_offset = atomicAdd(num_offsets, 1);
+            offsets[old_offset] = idx;
+        }
+    }
+}
+
+extern "C" void compute_offsets_of_cells(
+	int window_size,
+	int* pos_arr,
+	CELL_ID_TYPE* point_cell_idx,
+	int* offsets,
+	int* num_offsets
+) {
+	int block = 256;
+	int grid = (window_size + 1 + block - 1) / block;
+	compute_offsets_of_cells_kernel <<<grid, block>>>(
+		window_size,
+		pos_arr,
+		point_cell_idx,
+		offsets,
+		num_offsets
+	);
+}
+
+// CUDA 核函数：计算满足条件的点数量并进行归约
+__global__ void count_points_in_dense_cells_kernel(const int* cell_offsets, int num_nonempty_cells, 
+                                        		   int min_pts, int* num_points_in_dense_cells,
+												   int* num_dense_cells) {
+    // 使用共享内存存储线程块内的部分和
+    extern __shared__ int shared_data[];
+
+    int tid = threadIdx.x;
+    int global_tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    // 每个线程的局部和
+    int local_sum = 0;
+
+    // 循环计算分配给该线程的点
+    for (int i = global_tid; i < num_nonempty_cells; i += stride) {
+        int num_points_in_cell = cell_offsets[i + 1] - cell_offsets[i];
+        if (num_points_in_cell >= min_pts) {
+            local_sum += num_points_in_cell;
+			atomicAdd(num_dense_cells, 1); // TODO：后面使用 shared_mem 优化
+        }
+    }
+
+    // 将局部和存入共享内存
+    shared_data[tid] = local_sum;
+    __syncthreads();
+
+    // 线程块内归约
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_data[tid] += shared_data[tid + s];
+        }
+        __syncthreads();
+    }
+
+    // 将块内的和写入全局内存
+    if (tid == 0) {
+        atomicAdd(num_points_in_dense_cells, shared_data[0]);
+    }
+}
+
+extern "C" void count_points_in_dense_cells(const int* cell_offsets, int num_nonempty_cells, 
+                                        	int min_pts, int* num_points_in_dense_cells, 
+											int* num_dense_cells) {
+	int block = 256;
+	int grid = (num_nonempty_cells + block - 1) / block;
+	count_points_in_dense_cells_kernel <<<grid, block, block * sizeof(int)>>>(
+		cell_offsets,
+		num_nonempty_cells,
+		min_pts,
+		num_points_in_dense_cells,
+		num_dense_cells
+	);
+}
+
+__global__ void set_hybrid_spheres_info_kernel(
+	int num_cells,
+	int min_pts,
+	int* pos_arr,
+	DATA_TYPE_3* window,
+	int* sparse_offset,
+	int* dense_offset,
+	int* offsets,
+	int* mixed_pos_arr,
+	DATA_TYPE_3* centers,
+	int* cid,
+	int** points_in_dense_cells,
+	int* num_points_in_dense_cell,
+	DATA_TYPE* min_value,
+	DATA_TYPE cell_length
+) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_cells)
+		return;
+	// dense_cell 往后放，然后 sparse cells 往前放
+	const int num_points = offsets[idx + 1] - offsets[idx];
+	if (num_points < min_pts) {
+		int offset = atomicAdd(sparse_offset, num_points);
+		for (int i = offsets[idx]; i < offsets[idx + 1]; i++, offset++) {
+			mixed_pos_arr[offset] = pos_arr[i];
+			centers[offset] = window[pos_arr[i]];
+			cid[pos_arr[i]] = pos_arr[i];
+		}
+	} else {
+		int offset = atomicAdd(dense_offset, 1);
+		mixed_pos_arr[offset] = pos_arr[offsets[idx]];
+		DATA_TYPE_3& point = window[pos_arr[offsets[idx]]];
+		int dim_id_x = (point.x - min_value[0]) / cell_length;
+        int dim_id_y = (point.y - min_value[1]) / cell_length;
+        int dim_id_z = (point.z - min_value[2]) / cell_length;
+        DATA_TYPE_3 center = { min_value[0] + (dim_id_x + 0.5f) * cell_length, 
+                               min_value[1] + (dim_id_y + 0.5f) * cell_length, 
+                               min_value[2] + (dim_id_z + 0.5f) * cell_length };
+        centers[offset] = center;
+		const int repres = pos_arr[offsets[idx]];
+		for (int i = offsets[idx]; i < offsets[idx + 1]; i++) {
+			cid[pos_arr[i]] = repres;
+		}
+		points_in_dense_cells[offset] = pos_arr + offsets[idx];
+		num_points_in_dense_cell[offset] = num_points;
+	}
+}
+
+extern "C" void set_hybrid_spheres_info(
+	int num_cells,
+	int min_pts,
+	int* pos_arr,
+	DATA_TYPE_3* window,
+	int* sparse_offset,
+	int* dense_offset,
+	int* offsets,
+	int* mixed_pos_arr,
+	DATA_TYPE_3* centers,
+	int* cid,
+	int** points_in_dense_cells,
+	int* num_points_in_dense_cell,
+	DATA_TYPE* min_value,
+	DATA_TYPE cell_length
+) {
+	int block = 256;
+	int grid = (num_cells + block - 1) / block;
+	set_hybrid_spheres_info_kernel <<<grid, block>>>(
+		num_cells,
+		min_pts,
+		pos_arr,
+		window,
+		sparse_offset,
+		dense_offset,
+		offsets,
+		mixed_pos_arr,
+		centers,
+		cid,
+		points_in_dense_cells,
+		num_points_in_dense_cell,
+		min_value,
+		cell_length
+	);
+}

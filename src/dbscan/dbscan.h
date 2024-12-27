@@ -59,6 +59,12 @@ struct Params {
     int*                    points_in_dense_cells;
     int*                    pos_arr;
     // bool*                   point_status;
+    int*                    offsets;
+    int*                    num_offsets;
+    int*                    num_points_in_dense_cells;
+    int*                    num_dense_cells;
+    int*                    sparse_offset;
+    int*                    dense_offset;
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
@@ -115,4 +121,34 @@ extern "C" void cluster_dense_cells(int* pos_arr,
 									int* d_neighbor_cells_capacity,
 									cudaStream_t stream);
 extern "C" void post_cluster(int* label, int* cluster_id, int window_size, cudaStream_t stream);
+extern "C" void compute_offsets_of_cells(
+	int window_size,
+	int* pos_arr,
+	CELL_ID_TYPE* point_cell_idx,
+	int* offsets,
+	int* num_offsets
+);
+extern "C" void count_points_in_dense_cells(const int* cell_offsets, int num_nonempty_cells, 
+                                        	int min_pts, int* num_points_in_dense_cells,
+                                            int* num_dense_cells);
+extern "C" void set_hybrid_spheres_info(
+	int num_cells,
+	int min_pts,
+	int* pos_arr,
+	DATA_TYPE_3* window,
+	int* sparse_offset,
+	int* dense_offset,
+	int* offsets,
+	int* mixed_pos_arr,
+	DATA_TYPE_3* centers,
+	int* cid,
+	int** points_in_dense_cells,
+	int* num_points_in_dense_cell,
+	DATA_TYPE* min_value,
+	DATA_TYPE cell_length
+);
+
+// void thrust_sort(int* keys, int n);
+// void thrust_sort(thrust::device_ptr<int> keys_ptr, int n);
+// void thrust_sort_by_cell_idx(int* pos_arr, CELL_ID_TYPE* point_cell_idx, int n);
 #endif

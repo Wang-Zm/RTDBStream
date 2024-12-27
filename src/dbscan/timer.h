@@ -64,6 +64,8 @@ class Timer{
   double gen_aabb;
   double merge_pos_arr;
   double sort_new_stride;
+  double compute_offsets;
+  double count_sparse_points;
 
   cudaEvent_t start1, stop1;
   cudaEvent_t start2, stop2;
@@ -141,6 +143,8 @@ class Timer{
     gen_aabb = 0;
     merge_pos_arr = 0;
     sort_new_stride = 0;
+    compute_offsets = 0;
+    count_sparse_points = 0;
   }
 
   void startTimer(double *t) {
@@ -186,8 +190,10 @@ class Timer{
     cout << "[Time]   sort_new_stride: " << sort_new_stride / query_num << " ms" << endl;
     cout << "[Time]  merge_pos_arr: " << merge_pos_arr / query_num << " ms" << endl;
     cout << "[Time] early_cluster: " << early_cluster / query_num << " ms" << endl;
-    cout << "[Time] set_sparse_spheres: " << set_sparse_spheres / query_num << " ms" << endl;
-    cout << "[Time] set_dense_spheres: " << set_dense_spheres / query_num << " ms" << endl;
+    cout << "[Time]  set_sparse_spheres: " << set_sparse_spheres / query_num << " ms" << endl;
+    cout << "[Time]  set_dense_spheres: " << set_dense_spheres / query_num << " ms" << endl;
+    cout << "[Time]  compute_offsets: " << compute_offsets / query_num << " ms" << endl;
+    cout << "[Time]  count_sparse_points: " << count_sparse_points / query_num << " ms" << endl;
     cout << "[Time] build_bvh: " << build_bvh / query_num << " ms" << endl;
     cout << "[Time] gen_aabb: " << gen_aabb / query_num << " ms" << endl;
     cout << "[Time] find_cores: " << find_cores / query_num << " ms" << endl;

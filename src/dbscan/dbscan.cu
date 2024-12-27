@@ -256,6 +256,8 @@ extern "C" __global__ void __intersection__grid() {
 #if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
 #endif
+    if (primIdx >= params.sparse_num) // 说明碰见了 big sphere
+        return;
     // 如果 primIdx 邻居数量超过了 minPts 个，可以直接跳过了
     if (params.nn[primIdx] >= params.min_pts)
         return;
@@ -326,12 +328,14 @@ extern "C" __global__ void __intersection__cluster() {
     unsigned ray_id  = optixGetPayload_2();
     if (params.label[primIdx] == 0 && primIdx > ray_id) return; // 是 core 且 id 靠后，则直接退出 => 减少距离计算次数
     
+    optixSetPayload_0(optixGetPayload_0() + 1);
+
     // 先判别是否已经属于同一个 cluster，prune，减少距离计算
     int ray_rep = find_repres(ray_id, params.cluster_id);
     int prim_rep = find_repres(primIdx, params.cluster_id);
     if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
 
-    optixSetPayload_0(optixGetPayload_0() + 1);
+    optixSetPayload_1(optixGetPayload_1() + 1);
 
     const DATA_TYPE_3 ray_orig = params.window[ray_id];
     const DATA_TYPE_3 point    = params.window[primIdx];
@@ -343,9 +347,9 @@ extern "C" __global__ void __intersection__cluster() {
     } else { // border 处暂直接设置 direct parent 即可
         if (params.cluster_id[primIdx] == primIdx) {
             atomicCAS(params.cluster_id + primIdx, primIdx, ray_id);
+            // 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
+            params.label[primIdx] = 1; // 设置为 border
         }
-        // 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
-        params.label[primIdx] = 1; // 设置为 border
     }
 }
 
@@ -361,7 +365,9 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
         return;
 
     // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
-    if (params.cell_point_num[primIdx] < params.min_pts) { // Eps-radius sphere
+    // if (params.cell_point_num[primIdx] < params.min_pts) { // Eps-radius sphere
+    // 改变判别条件，primIdx 是否 < num_points_in_sparse_cells
+    if (primIdx < params.sparse_num) {
         // if (prim_idx_in_window > ray_id) { // * Avoid calculating repeatedly
         //     return;
         // }
@@ -382,6 +388,7 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
 
         // 如果 ray 的 cell_id 更靠前，那么直接跳过，不再计算
         // if (params.point_cell_id[prim_idx_in_window] > optixGetPayload_3()) return;
+        
         int *points_in_cell = params.cell_points[primIdx];
         int num_points = params.cell_point_num[primIdx];
         for (int i = 0; i < num_points; i++) {

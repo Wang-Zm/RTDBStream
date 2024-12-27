@@ -451,7 +451,7 @@ void make_gas_from_small_big_sphere(ScanState &state, Timer &timer) {
 
 void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
     OptixAccelBuildOptions accel_options = {};
-    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
+    accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     timer.startTimer(&timer.gen_aabb);
@@ -459,7 +459,8 @@ void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
 #if OPTIMIZATION_LEVEL == 9
     // kGenAABB(state.params.centers, state.radius, state.params.sparse_num, d_aabb, 0);
     genAABB_hybrid_width(state.params.centers, state.radius, state.radius_one_half, state.params.sparse_num, state.params.center_num, d_aabb, 0);
-    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.sparse_num;
+    // state.vertex_input.customPrimitiveArray.numPrimitives = state.params.sparse_num;
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
 #else
     kGenAABB(state.params.centers, state.radius, state.params.center_num, d_aabb, 0);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;

@@ -10,6 +10,8 @@
 #include "dbscan.h"
 #include "timer.h"
 
+// #define COMPUTE_CELL_CENTER // * 无效
+
 using namespace std;
 
 struct ScanState
@@ -99,6 +101,7 @@ struct ScanState
     int*                                uniq_pos_arr;
     int*                                num_points;
     unordered_map<CELL_ID_TYPE, int>    pos_of_cell;
+    unordered_map<CELL_ID_TYPE, DATA_TYPE_3> cell_centers;
 
     vector<int>                         neighbor_cells_list;
     vector<int>                         neighbor_cells_capacity;
