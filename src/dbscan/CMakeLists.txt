@@ -12,19 +12,24 @@ OPTIX_add_sample_executable( dbscan target_name
   timer.h
   util.cpp
   optix.cpp
+  grid.cpp
   # OPTIONS -rdc true
   )
 
+# target_link_libraries( ${target_name}
+#   ${CUDA_LIBRARIES}
+# )
+  
+# 使用 std::parallel_sort
+find_package(OpenMP REQUIRED)
+find_package(TBB REQUIRED)
+# 如果找到 OpenMP，设置编译选项
+if (OpenMP_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
 target_link_libraries( ${target_name}
-  ${CUDA_LIBRARIES}
-  )
-
-    
-# 查找 OpenMP
-# find_package(OpenMP)
-# if(OpenMP_CXX_FOUND)
-#   message(STATUS "OpenMP found, enabling parallelization.")
-#   target_link_libraries(${target_name} OpenMP::OpenMP_CXX)
-# else()
-#   message(WARNING "OpenMP not found, parallelization will not be enabled.")
-# endif()
+ ${CUDA_LIBRARIES}
+ OpenMP::OpenMP_CXX
+ TBB::tbb
+)

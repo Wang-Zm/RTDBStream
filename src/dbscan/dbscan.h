@@ -1,6 +1,8 @@
 #ifndef OPTIXSCAN_H
 #define OPTIXSCAN_H
 
+#include <cuda_runtime.h>
+
 #define DEBUG_INFO 0
 #define THREAD_NUM 40
 

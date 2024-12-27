@@ -7,12 +7,17 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 #include "dbscan.h"
 #include "timer.h"
 
-// #define COMPUTE_CELL_CENTER // * 无效
+// #define COMPUTE_CELL_CENTER // * ineffective
+// #define USE_OMP // * Low performance
+// #define GRID_VECTOR // * Low performance
 
 using namespace std;
+
+extern Timer timer;
 
 struct ScanState
 {
@@ -112,6 +117,14 @@ struct ScanState
     cudaStream_t                        stream2;
 };
 
+inline CELL_ID_TYPE get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
+    CELL_ID_TYPE dim_id_x = (data[i].x - min_value[0]) / cell_length;
+    CELL_ID_TYPE dim_id_y = (data[i].y - min_value[1]) / cell_length;
+    CELL_ID_TYPE dim_id_z = (data[i].z - min_value[2]) / cell_length;
+    CELL_ID_TYPE id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
+    return id;
+}
+
 void read_data_from_tao(string& data_file, ScanState &state);
 void read_data_from_geolife(string& data_file, ScanState &state);
 void read_data_from_rbf(string& data_file, ScanState &state);
@@ -145,4 +158,9 @@ void make_module(ScanState &state);
 void make_program_groups(ScanState &state);
 void make_pipeline(ScanState &state);
 void make_sbt(ScanState &state);
+
+void update_grid(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_without_vector(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_without_vector_parallel(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_using_unordered_map(ScanState &state, int update_pos, int window_left, int window_right);
 #endif

@@ -9,15 +9,6 @@
 #include "timer.h"
 using namespace std;
 
-inline CELL_ID_TYPE get_cell_id(DATA_TYPE_3* data, vector<DATA_TYPE>& min_value, vector<int>& cell_count, DATA_TYPE cell_length, int i) {
-    CELL_ID_TYPE id = 0;
-    CELL_ID_TYPE dim_id_x = (data[i].x - min_value[0]) / cell_length;
-    CELL_ID_TYPE dim_id_y = (data[i].y - min_value[1]) / cell_length;
-    CELL_ID_TYPE dim_id_z = (data[i].z - min_value[2]) / cell_length;
-    id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
-    return id;
-}
-
 void read_data_from_tao(string& data_file, ScanState &state) {
     state.h_data = (DATA_TYPE_3*) malloc(state.data_num * sizeof(DATA_TYPE_3));
     state.max_value.resize(3);
