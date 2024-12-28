@@ -360,7 +360,8 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     // TODO：考虑设置 sparse point 的光线不遇到大球：1.设置 ray_id 是否是 sparse 放到 Payload 中，如果是 sparse ray 直接跳过
     // TODO：dense cell 也可以避免计算，比如遇到了 cell_id 更大的球，可以直接规避，不计算距离
 
-    int prim_idx_in_window = params.center_idx_in_window[primIdx];
+    // int prim_idx_in_window = params.center_idx_in_window[primIdx];
+    int prim_idx_in_window = *params.cell_points[primIdx];
     if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) 
         return;
 

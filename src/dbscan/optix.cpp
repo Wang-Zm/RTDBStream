@@ -465,7 +465,7 @@ void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
     kGenAABB(state.params.centers, state.radius, state.params.center_num, d_aabb, 0);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
 #endif
-    CUDA_SYNC_CHECK();
+    // CUDA_SYNC_CHECK();
     timer.stopTimer(&timer.gen_aabb);
 
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;

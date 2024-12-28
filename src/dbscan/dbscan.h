@@ -149,6 +149,7 @@ extern "C" void set_hybrid_spheres_info(
 	DATA_TYPE* min_value,
 	DATA_TYPE cell_length
 );
+void set_label(int** cell_points, int* nn, int min_pts, int* label, int num_points);
 
 // void thrust_sort(int* keys, int n);
 // void thrust_sort(thrust::device_ptr<int> keys_ptr, int n);

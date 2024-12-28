@@ -87,6 +87,7 @@ struct ScanState
     int*                                h_cell_point_num_p;
     int*                                h_point_status;
     int*                                h_big_sphere;
+    int*                                h_timestamp;
 
     unsigned*                           h_ray_hits;
     unsigned*                           h_ray_intersections;
@@ -161,6 +162,7 @@ void make_sbt(ScanState &state);
 
 void update_grid(ScanState &state, int update_pos, int window_left, int window_right);
 void update_grid_without_vector(ScanState &state, int update_pos, int window_left, int window_right);
-void update_grid_without_vector_parallel(ScanState &state, int update_pos, int window_left, int window_right);
+// void update_grid_without_vector_parallel(ScanState &state, int update_pos, int window_left, int window_right);
 void update_grid_using_unordered_map(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_with_timestamp(ScanState &state, int update_pos, int window_left, int window_right);
 #endif

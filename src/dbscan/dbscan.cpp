@@ -15,8 +15,8 @@
 #include <unistd.h>
 #include <map>
 #include <queue>
-#include <thread>
-#include <omp.h>
+// #include <thread>
+// #include <omp.h>
 
 #include "state.h"
 #include "timer.h"
@@ -409,7 +409,8 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
                 state.h_cluster_id[pos_arr[j]] = pos_arr[j];
                 state.h_centers_p[num_sparse_centers] = state.h_window[pos_arr[j]];
                 state.h_cell_point_num_p[num_sparse_centers] = 1;
-                state.h_center_idx_in_window_p[num_sparse_centers] = pos_arr[j];
+                // state.h_center_idx_in_window_p[num_sparse_centers] = pos_arr[j];
+                state.d_cell_points[num_sparse_centers] = state.params.pos_arr + j; 
                 num_sparse_centers++;
                 // state.h_point_status[pos_arr[j]] = 1; // Sparse point
                 j++;
@@ -446,7 +447,7 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
                                state.min_value[2] + (dim_id_z + 0.5f) * state.cell_length };
         state.h_centers_p[num_sparse_centers] = center;
 #endif
-        state.h_center_idx_in_window_p[num_sparse_centers] = pos;
+        // state.h_center_idx_in_window_p[num_sparse_centers] = pos;
         state.h_cell_point_num_p[num_sparse_centers] = point_num;
         num_sparse_centers++;
         state.d_cell_points[idx] = state.params.pos_arr + pos_idx; // 索引
@@ -464,10 +465,10 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
                           state.h_centers_p, 
                           state.params.center_num * sizeof(DATA_TYPE_3), 
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
-                          state.h_center_idx_in_window_p, 
-                          state.params.center_num * sizeof(int), 
-                          cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemcpy(state.params.center_idx_in_window, 
+    //                       state.h_center_idx_in_window_p, 
+    //                       state.params.center_num * sizeof(int), 
+    //                       cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(state.params.cell_point_num, 
                           state.h_cell_point_num_p, 
                           state.params.center_num * sizeof(int), 
@@ -1984,38 +1985,31 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
         update_grid_without_vector(state, update_pos, window_left, window_right);
     #endif
 #endif
-        // update_grid_thrust(state, update_pos, window_left, window_right);
         timer.stopTimer(&timer.update_grid);
         
         set_hybrid_aabb(state);
         timer.startTimer(&timer.build_bvh);
         make_gas_by_sparse_points(state, timer);
-        CUDA_SYNC_CHECK();
+        // CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.build_bvh);
         
         CUDA_CHECK(cudaMemset(state.params.nn, 0, state.params.sparse_num * sizeof(int)));
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         timer.startTimer(&timer.find_cores);
         OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
-        CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.params.sparse_num * sizeof(int), cudaMemcpyDeviceToHost));
         timer.stopTimer(&timer.find_cores);
         timer.startTimer(&timer.set_label);
-        memset(state.h_label, 0, state.window_size * sizeof(int)); // Set all points to cores
-        for (int i = 0; i < state.params.sparse_num; i++) {
-            if (state.h_nn[i] < state.min_pts) { // Mark noises
-                state.h_label[state.h_center_idx_in_window_p[i]] = 2; // Noise
-            }
-        }
+        CUDA_CHECK(cudaMemset(state.params.label, 0, state.window_size * sizeof(int)));
+        set_label(state.params.cell_points, state.params.nn, state.min_pts, state.params.label, state.params.sparse_num);
+        // CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_label);
-        // make_gas_from_small_big_sphere(state, timer);
-        CUDA_CHECK(cudaMemcpy(state.params.label, state.h_label, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
         timer.stopTimer(&timer.pre_process);
-        
+
         // 构建好 hybrid BVH tree 后聚类
         timer.startTimer(&timer.set_cluster_id);
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
-        CUDA_SYNC_CHECK();
+        // CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_cluster_id);
 
         timer.startTimer(&timer.union_cluster_id); 
@@ -2142,7 +2136,7 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     state.check = false;
-    // state.check = true;
+    state.check = true;
     initialize_params(state);
     
     // Warmup

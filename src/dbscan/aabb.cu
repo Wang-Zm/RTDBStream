@@ -718,3 +718,17 @@ extern "C" void set_hybrid_spheres_info(
 		cell_length
 	);
 }
+
+__global__ void set_label_kernel(int** cell_points, int* nn, int min_pts, int* label, int num_points) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_points)
+		return;
+	if (nn[idx] < min_pts)
+		label[*cell_points[idx]] = 2;
+}
+
+void set_label(int** cell_points, int* nn, int min_pts, int* label, int num_points) {
+	int block = 256;
+	int grid = (num_points + block - 1) / block;
+	set_label_kernel <<<grid, block>>>(cell_points, nn, min_pts, label, num_points);
+}
