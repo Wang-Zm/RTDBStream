@@ -256,8 +256,10 @@ extern "C" __global__ void __intersection__grid() {
 #if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
 #endif
+#if OPTIMIZATION_LEVEL == 9
     if (primIdx >= params.sparse_num) // 说明碰见了 big sphere
         return;
+#endif
     // 如果 primIdx 邻居数量超过了 minPts 个，可以直接跳过了
     if (params.nn[primIdx] >= params.min_pts)
         return;

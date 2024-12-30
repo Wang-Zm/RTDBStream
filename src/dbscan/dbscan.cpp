@@ -361,7 +361,7 @@ void set_centers_sparse_without_vector(ScanState &state) {
     timer.startTimer(&timer.early_cluster);
     state.h_centers.clear();
     state.h_center_idx_in_window.clear();
-    state.pos_of_cell.clear();
+    // state.pos_of_cell.clear();
     int *pos_arr = state.pos_arr;
     int j = 0;
     int num_dense_cells = 0, num_sparse_points = 0;
@@ -371,19 +371,20 @@ void set_centers_sparse_without_vector(ScanState &state) {
         if (point_num < state.min_pts) {
             int pos_arr_start = j;
             for (int k = 0; k < point_num; k++) {
-                state.h_cluster_id[pos_arr[j]] = pos_arr[j];
+                // state.h_cluster_id[pos_arr[j]] = pos_arr[j];
                 state.h_centers.push_back(state.h_window[pos_arr[j++]]);
             }
             state.h_center_idx_in_window.insert(state.h_center_idx_in_window.end(), pos_arr + pos_arr_start, pos_arr + j);
             num_sparse_points += point_num;
         } else {
-            state.pos_of_cell[cell_id] = j; // Set for dense cells
+            // state.pos_of_cell[cell_id] = j; // Set for dense cells
             num_dense_cells++;
-            int id = pos_arr[j];
-            for (int k = 0; k < point_num; k++) {
-                state.h_cluster_id[pos_arr[j]] = id;
-                j++;
-            }
+            // int id = pos_arr[j];
+            // for (int k = 0; k < point_num; k++) {
+            //     state.h_cluster_id[pos_arr[j]] = id;
+            //     j++;
+            // }
+            j += point_num;
         }
     }
     CUDA_CHECK(cudaMemcpy(state.params.centers, state.h_centers.data(), state.h_centers.size() * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
