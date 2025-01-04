@@ -204,37 +204,9 @@ void update_grid_thrust(ScanState &state, int update_pos, int window_left, int w
     timer.stopTimer(&timer.sort_h_point_cell_id);
 
     timer.startTimer(&timer.merge_pos_arr);
-    int *new_pos_arr = state.new_pos_arr;
-    int *pos_arr = state.pos_arr;
-    CELL_ID_TYPE *point_cell_id = state.h_point_cell_id; // ? 没有设置 point_cell_id，为什么还能够正常合并
-    int *tmp_pos_arr = state.tmp_pos_arr;
-    int i1 = 0, i2 = 0, i3 = 0;
-    while (i1 < state.window_size && i2 < state.stride_size) {
-        if (pos_arr[i1] >= stride_left && pos_arr[i1] < stride_left + state.stride_size) {
-            i1++;
-            continue;
-        }
-        if (point_cell_id[pos_arr[i1]] < point_cell_id[new_pos_arr[i2]]) {
-            tmp_pos_arr[i3++] = pos_arr[i1++];
-        } else if (point_cell_id[pos_arr[i1]] > point_cell_id[new_pos_arr[i2]]) {
-            tmp_pos_arr[i3++] = new_pos_arr[i2++];
-        } else { // ==
-            if (pos_arr[i1] < new_pos_arr[i2]) {
-                tmp_pos_arr[i3++] = pos_arr[i1++];
-            } else {
-                tmp_pos_arr[i3++] = new_pos_arr[i2++];
-            }
-        }
-    }
-    while (i1 < state.window_size) {
-        if (pos_arr[i1] >= stride_left && pos_arr[i1] < stride_left + state.stride_size) {
-            i1++;
-            continue;
-        }
-        tmp_pos_arr[i3++] = pos_arr[i1++];
-    }
-    memcpy(tmp_pos_arr + i3, new_pos_arr + i2, (state.stride_size - i2) * sizeof(int));
-    memcpy(pos_arr, tmp_pos_arr, state.window_size * sizeof(int));
+    merge_by_cell_id_and_idx(state.params.pos_arr, state.params.new_pos_arr, state.params.tmp_pos_arr, 
+                             state.params.point_cell_id, state.window_size, state.stride_size, stride_left);
+    cudaMemcpy(state.params.pos_arr, state.params.tmp_pos_arr, state.window_size * sizeof(int), cudaMemcpyDeviceToDevice);
     timer.stopTimer(&timer.merge_pos_arr);
 }
 

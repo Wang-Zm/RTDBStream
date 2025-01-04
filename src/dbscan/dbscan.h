@@ -61,6 +61,7 @@ struct Params {
     int*                    points_in_dense_cells;
     int*                    pos_arr;
     // bool*                   point_status;
+    int*                    tmp_pos_arr;
     int*                    new_pos_arr;
     int*                    offsets;
     int*                    num_offsets;

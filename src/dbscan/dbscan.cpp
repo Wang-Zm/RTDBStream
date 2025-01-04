@@ -75,6 +75,7 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(&state.params.pos_arr, 2 * state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&state.params.point_status, state.window_size * sizeof(bool)));
     CUDA_CHECK(cudaMalloc(&state.params.new_pos_arr, state.stride_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.tmp_pos_arr, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMallocHost(&state.pos_arr, state.window_size * sizeof(int)));
     state.tmp_pos_arr = (int*) malloc(state.window_size * sizeof(int));
     state.new_pos_arr = (int*) malloc(state.stride_size * sizeof(int));
@@ -499,7 +500,7 @@ void set_hybrid_aabb_gpu(ScanState &state) {
     timer.startTimer(&timer.early_cluster);
     // 1.计算 offsets
     timer.startTimer(&timer.compute_offsets);
-    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(state.params.num_offsets, 0, sizeof(int)));
     compute_offsets_of_cells(state.window_size, state.params.pos_arr, state.params.point_cell_id, state.params.offsets, state.params.num_offsets);
     int num_offsets;
@@ -2059,6 +2060,7 @@ void search(ScanState &state, bool timing) {
          [point_cell_id = state.h_point_cell_id](size_t i1, size_t i2) { 
             return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
          });
+    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
     // * Start sliding
     CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
     state.h_nn = (int*) malloc(state.window_size * sizeof(int));
@@ -2169,6 +2171,7 @@ void cleanup(ScanState &state) {
     CUDA_CHECK(cudaFree(state.params.pos_arr));
     CUDA_CHECK(cudaFree(state.params.point_status));
     CUDA_CHECK(cudaFree(state.params.new_pos_arr));
+    CUDA_CHECK(cudaFree(state.params.tmp_pos_arr));
     CUDA_CHECK(cudaFree(state.params.center_idx_in_window));
     CUDA_CHECK(cudaFree(state.params.offsets));
     CUDA_CHECK(cudaFree(state.params.num_offsets));
@@ -2227,7 +2230,7 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     state.check = false;
-    // state.check = true;
+    state.check = true;
     initialize_params(state);
     
     // Warmup
