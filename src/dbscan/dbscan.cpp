@@ -500,7 +500,6 @@ void set_hybrid_aabb_gpu(ScanState &state) {
     // 1.计算 offsets
     timer.startTimer(&timer.compute_offsets);
     CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
-    // CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.window_size * sizeof(CELL_ID_TYPE), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(state.params.num_offsets, 0, sizeof(int)));
     compute_offsets_of_cells(state.window_size, state.params.pos_arr, state.params.point_cell_id, state.params.offsets, state.params.num_offsets);
     int num_offsets;
@@ -1952,10 +1951,9 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
     }
     CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.window_size * sizeof(CELL_ID_TYPE), cudaMemcpyHostToDevice));
     int *pos_arr = state.pos_arr;
-    CELL_ID_TYPE *point_cell_id = state.h_point_cell_id;
     for (int i = 0; i < state.window_size; i++) pos_arr[i] = i;
     sort(pos_arr, pos_arr + state.window_size, 
-         [point_cell_id](size_t i1, size_t i2) { 
+         [point_cell_id = state.h_point_cell_id](size_t i1, size_t i2) { 
             return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
          });
     // * Start sliding
@@ -1983,14 +1981,12 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
     #ifdef GRID_VECTOR
         update_grid_using_unordered_map(state, update_pos, window_left, window_right);
     #else
-        // update_grid_without_vector(state, update_pos, window_left, window_right);
-        update_grid_thrust(state, update_pos, window_left, window_right);
+        update_grid_without_vector(state, update_pos, window_left, window_right);
     #endif
 #endif
         timer.stopTimer(&timer.update_grid);
         
-        // set_hybrid_aabb(state);
-        set_hybrid_aabb_gpu(state); // 可能没有设置 state.params.cell_points，使得 set_label 无法成功
+        set_hybrid_aabb(state);
         timer.startTimer(&timer.build_bvh);
         make_gas_by_sparse_points(state, timer);
         // CUDA_SYNC_CHECK();
@@ -2018,6 +2014,93 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
         timer.startTimer(&timer.union_cluster_id); 
         post_cluster(state.params.label, state.params.cluster_id, state.window_size, 0);
         // CUDA_SYNC_CHECK();
+        CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+        timer.stopTimer(&timer.union_cluster_id);
+        
+        stride_num++;
+        remaining_data_num  -= state.stride_size;
+        state.new_stride    += state.stride_size;
+        update_pos           = (update_pos + 1) % unit_num;
+        window_left         += state.stride_size;
+        window_right        += state.stride_size;
+        timer.stopTimer(&timer.total);
+        // printf("[Time] Total process: %lf ms\n", timer.total);
+        // timer.total = 0.0;
+        if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
+#if DEBUG_INFO == 1
+        print_rt_info(state);
+#endif
+        // printf("[Step] Finish window %d\n", stride_num);
+    }
+    printf("[Step] Finish sliding the window...\n");
+}
+
+void search(ScanState &state, bool timing) {
+    int remaining_data_num  = state.data_num - state.window_size;
+    int unit_num            = state.window_size / state.stride_size;
+    int update_pos          = 0;
+    int stride_num          = 0;
+    int window_left         = 0;
+    int window_right        = state.window_size;
+    state.new_stride        = state.h_data + state.window_size;
+    log_common_info(state);
+    // * Initialize the first window
+    CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+    make_gas(state);
+    for (int i = 0; i < state.window_size; i++) {
+        CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
+        state.h_point_cell_id[i] = cell_id;
+    }
+    CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.window_size * sizeof(CELL_ID_TYPE), cudaMemcpyHostToDevice));
+    int *pos_arr = state.pos_arr;
+    for (int i = 0; i < state.window_size; i++) pos_arr[i] = i;
+    sort(pos_arr, pos_arr + state.window_size, 
+         [point_cell_id = state.h_point_cell_id](size_t i1, size_t i2) { 
+            return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
+         });
+    // * Start sliding
+    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
+    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
+    printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
+    if (!timing) printf("[Info] checking\n");
+    while (remaining_data_num >= state.stride_size) {
+        timer.startTimer(&timer.total);
+        timer.startTimer(&timer.pre_process);
+        
+        timer.startTimer(&timer.input_data);
+        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
+        CUDA_CHECK(cudaMemcpy(state.params.window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
+        timer.stopTimer(&timer.input_data);
+        
+        timer.startTimer(&timer.update_grid);
+        update_grid_thrust(state, update_pos, window_left, window_right);
+        timer.stopTimer(&timer.update_grid);
+        
+        set_hybrid_aabb_gpu(state);
+        timer.startTimer(&timer.build_bvh);
+        make_gas_by_sparse_points(state, timer);
+        timer.stopTimer(&timer.build_bvh);
+        
+        CUDA_CHECK(cudaMemset(state.params.nn, 0, state.params.sparse_num * sizeof(int)));
+        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
+        timer.startTimer(&timer.find_cores);
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
+        timer.stopTimer(&timer.find_cores);
+        timer.startTimer(&timer.set_label);
+        CUDA_CHECK(cudaMemset(state.params.label, 0, state.window_size * sizeof(int)));
+        set_label(state.params.cell_points, state.params.nn, state.min_pts, state.params.label, state.params.sparse_num);
+        timer.stopTimer(&timer.set_label);
+        timer.stopTimer(&timer.pre_process);
+
+        // 构建好 hybrid BVH tree 后聚类
+        timer.startTimer(&timer.set_cluster_id);
+        OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
+        timer.stopTimer(&timer.set_cluster_id);
+
+        timer.startTimer(&timer.union_cluster_id); 
+        post_cluster(state.params.label, state.params.cluster_id, state.window_size, 0);
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         timer.stopTimer(&timer.union_cluster_id);
@@ -2144,13 +2227,14 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     state.check = false;
-    state.check = true;
+    // state.check = true;
     initialize_params(state);
     
     // Warmup
     for (int i = 0; i < 10; i++) {
 #if OPTIMIZATION_LEVEL == 9
-        search_grid_cores_hybrid_bvh_op(state, !state.check);
+        search(state, !state.check);
+        // search_grid_cores_hybrid_bvh_op(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 8
         search_grid_cores_hybrid_bvh(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 7
@@ -2168,7 +2252,7 @@ int main(int argc, char *argv[]) {
         search_identify_cores(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 0
         search_naive(state, !state.check);
-#elif OPTIMIZATION_LEVEL == 10
+#elif OPTIMIZATION_LEVEL == 100
         search_cuda(state);
 #endif
         printf("[Step] Warmup %d\n", i);
@@ -2182,7 +2266,8 @@ int main(int argc, char *argv[]) {
     state.hits_all_window = 0;
     // Timing
 #if OPTIMIZATION_LEVEL == 9
-    search_grid_cores_hybrid_bvh_op(state, true);
+    search(state, true);
+    // search_grid_cores_hybrid_bvh_op(state, !state.check);
 #elif OPTIMIZATION_LEVEL == 8
     search_grid_cores_hybrid_bvh(state, true);
 #elif OPTIMIZATION_LEVEL == 7
@@ -2200,7 +2285,7 @@ int main(int argc, char *argv[]) {
     search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
     search_naive(state, true);
-#elif OPTIMIZATION_LEVEL == 10
+#elif OPTIMIZATION_LEVEL == 100
     search_cuda(state);
 #endif
 

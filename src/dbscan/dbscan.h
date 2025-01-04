@@ -153,9 +153,4 @@ extern "C" void set_hybrid_spheres_info(
 void set_label(int** cell_points, int* nn, int min_pts, int* label, int num_points);
 void compute_cell_id(DATA_TYPE_3* points, CELL_ID_TYPE* point_cell_id, int n,
 					 DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length);
-
-// void thrust_sort(int* keys, int n);
-// void thrust_sort(thrust::device_ptr<int> keys_ptr, int n);
-// void thrust_sort_by_cell_idx(int* pos_arr, CELL_ID_TYPE* point_cell_idx, int n);
-// void sortByCellIdAndOrder(int* d_pos_arr, int* point_cell_id, int n);
 #endif

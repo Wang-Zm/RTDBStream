@@ -186,14 +186,15 @@ void update_grid_without_vector_parallel(ScanState &state, int update_pos, int w
 }
 
 void update_grid_thrust(ScanState &state, int update_pos, int window_left, int window_right) {    
-    // 1.更新 h_point_cell_id
+    // 更新 point_cell_id
     timer.startTimer(&timer.update_h_point_cell_id);
     int stride_left = update_pos * state.stride_size;
     compute_cell_id(state.params.window + stride_left, state.params.point_cell_id + stride_left, state.stride_size,
                     state.params.min_value, state.params.cell_count, state.params.cell_length);
+    cudaMemcpy(state.h_point_cell_id + stride_left, state.params.point_cell_id + stride_left, state.stride_size * sizeof(CELL_ID_TYPE), cudaMemcpyDeviceToHost);
     timer.stopTimer(&timer.update_h_point_cell_id);
 
-    // 2.对 h_point_cell_id 排序，返回 pos_array
+    // 排序 new_pos_arr
     timer.startTimer(&timer.sort_h_point_cell_id);
     // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     timer.startTimer(&timer.sort_new_stride);
@@ -201,8 +202,6 @@ void update_grid_thrust(ScanState &state, int update_pos, int window_left, int w
     cudaMemcpy(state.new_pos_arr, state.params.new_pos_arr, state.stride_size * sizeof(int), cudaMemcpyDeviceToHost);
     timer.stopTimer(&timer.sort_new_stride);
     timer.stopTimer(&timer.sort_h_point_cell_id);
-
-    // cudaMemcpy(state.h_point_cell_id, state.params.point_cell_id, state.window_size * sizeof(CELL_ID_TYPE), cudaMemcpyDeviceToHost);
 
     timer.startTimer(&timer.merge_pos_arr);
     int *new_pos_arr = state.new_pos_arr;
