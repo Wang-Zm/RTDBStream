@@ -26,7 +26,7 @@ perf(n=575468, W=10000, S=500, K=6, R=1.3, data_file='tao.txt', log_file='tao') 
 # perf(n=24876978, W=100000, S=5000, K=765, R=0.002, data_file='geolife.bin', log_file='geolife')
 # set args -n 24876978 -W 200000 -S 10000 -K 6 -R 0.01 -f dataset/geolife.bin
 
-perf(n=40000, W=10000, S=500, K=4, R=0.035, data_file='RBF4_40000.csv', log_file='rbf')
+# perf(n=40000, W=10000, S=500, K=4, R=0.035, data_file='RBF4_40000.csv', log_file='rbf')
 # perf(n=40000, W=10000, S=500, K=4, R=0.038237, data_file='RBF4_40000.csv', log_file='rbf')
 # set args -n 40000 -W 10000 -S 500 -K 4 -R 0.019607 -f dataset/RBF4_40000.csv
 
@@ -36,6 +36,6 @@ perf(n=40000, W=10000, S=500, K=4, R=0.035, data_file='RBF4_40000.csv', log_file
 # perf(n=1048572, W=400000, S=20000, K=2, R=0.07, data_file='stock.txt', log_file='stk')
 # perf(n=1048572, W=100000, S=25000, K=2, R=0.07, data_file='stock.txt', log_file='stk')
 # perf(n=1048572, W=100000, S=10000, K=2, R=0.07, data_file='stock.txt', log_file='stk')
-perf(n=1048572, W=100000, S=5000, K=2, R=0.07, data_file='stock.txt', log_file='stk')
+# perf(n=1048572, W=100000, S=5000, K=2, R=0.07, data_file='stock.txt', log_file='stk')
 # perf(n=1048572, W=100000, S=5000, K=50, R=0.45, data_file='stock.txt', log_file='stk')
 # set args -n 1048572 -W 100000 -S 5000 -K 2 -R 0.07 -f dataset/stock.txt

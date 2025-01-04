@@ -53,6 +53,8 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_params), sizeof(Params)));
     CUDA_CHECK(cudaMallocHost(&state.h_cluster_id, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMallocHost(&state.h_label, state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
+    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
 
     CUDA_CHECK(cudaMalloc(&state.params.centers, state.window_size * sizeof(DATA_TYPE_3)));
     CUDA_CHECK(cudaMalloc(&state.params.radii, state.window_size * sizeof(DATA_TYPE)));
@@ -72,7 +74,7 @@ void initialize_params(ScanState &state) {
     CUDA_CHECK(cudaMallocHost(&state.d_cell_points, state.window_size * sizeof(int*)));
     for (int i = 0; i < state.window_size; i++) state.d_cell_points[i] = nullptr;
     state.points_in_dense_cells = (int*) malloc(state.window_size * sizeof(int));
-    CUDA_CHECK(cudaMalloc(&state.params.pos_arr, 2 * state.window_size * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state.params.pos_arr, state.window_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&state.params.point_status, state.window_size * sizeof(bool)));
     CUDA_CHECK(cudaMalloc(&state.params.new_pos_arr, state.stride_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&state.params.tmp_pos_arr, state.window_size * sizeof(int)));
@@ -125,7 +127,6 @@ void initialize_params(ScanState &state) {
         state.check_h_nn = (int*) malloc(state.window_size * sizeof(int)); 
         state.check_h_label = (int*) malloc(state.window_size * sizeof(int));
         state.check_h_cluster_id = (int*) malloc(state.window_size * sizeof(int));
-        state.h_nn = (int*) malloc(state.window_size * sizeof(int));
     }
 }
 
@@ -1547,8 +1548,6 @@ void search_grid_cores_like_rtod(ScanState &state, bool timing) {
         state.h_point_cell_id[i] = cell_id;
     }
     // * Start sliding
-    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
@@ -1649,8 +1648,6 @@ void search_grid_cores_like_rtod_friendly_gpu_grid_storing(ScanState &state, boo
             return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
          });
     // * Start sliding
-    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
@@ -2054,16 +2051,13 @@ void search(ScanState &state, bool timing) {
         state.h_point_cell_id[i] = cell_id;
     }
     CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.window_size * sizeof(CELL_ID_TYPE), cudaMemcpyHostToDevice));
-    int *pos_arr = state.pos_arr;
-    for (int i = 0; i < state.window_size; i++) pos_arr[i] = i;
-    sort(pos_arr, pos_arr + state.window_size, 
+    for (int i = 0; i < state.window_size; i++) state.pos_arr[i] = i;
+    sort(state.pos_arr, state.pos_arr + state.window_size, 
          [point_cell_id = state.h_point_cell_id](size_t i1, size_t i2) { 
             return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
          });
     CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
     // * Start sliding
-    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
-    state.h_nn = (int*) malloc(state.window_size * sizeof(int));
     memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
@@ -2195,6 +2189,7 @@ void cleanup(ScanState &state) {
     CUDA_CHECK(cudaFree(reinterpret_cast<void *>(state.d_params)));
 
     // Free memory for CUDA implementation
+    free(state.h_nn);
     if (state.check) {
         CUDA_CHECK(cudaFree(state.params.check_nn));
         CUDA_CHECK(cudaFree(state.params.check_label));
@@ -2202,7 +2197,6 @@ void cleanup(ScanState &state) {
         free(state.check_h_nn);
         free(state.check_h_label);
         free(state.check_h_cluster_id);
-        free(state.h_nn);
     }
 }
 

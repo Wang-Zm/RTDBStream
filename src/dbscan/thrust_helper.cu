@@ -37,7 +37,7 @@ void merge_by_cell_id_and_idx(int* pos_arr1, int* pos_arr2, int* pos_arr3, long*
     auto partition = [stride_left, stride_right] __device__ (int x) {
         return x < stride_left || x >= stride_right;
     };
-    thrust::partition(pos_ptr1, pos_ptr1 + n, partition);
+    thrust::stable_partition(pos_ptr1, pos_ptr1 + n, partition);
     
     auto custom_compare = [point_cell_id, stride_left, stride_right, n] __device__ (int a, int b) { // 把别的放到最后面
         if (point_cell_id[a] != point_cell_id[b]) 
