@@ -662,6 +662,7 @@ __global__ void set_hybrid_spheres_info_kernel(
 			mixed_pos_arr[offset] = pos_arr[i];
 			centers[offset] = window[pos_arr[i]];
 			cid[pos_arr[i]] = pos_arr[i];
+			points_in_dense_cells[offset] = pos_arr + i;
 		}
 	} else {
 		int offset = atomicAdd(dense_offset, 1);
@@ -731,4 +732,28 @@ void set_label(int** cell_points, int* nn, int min_pts, int* label, int num_poin
 	int block = 256;
 	int grid = (num_points + block - 1) / block;
 	set_label_kernel <<<grid, block>>>(cell_points, nn, min_pts, label, num_points);
+}
+
+static __forceinline__ __device__ CELL_ID_TYPE get_cell_id(DATA_TYPE_3 point, DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length) {
+    CELL_ID_TYPE dim_id_x = (point.x - min_value[0]) / cell_length;
+    CELL_ID_TYPE dim_id_y = (point.y - min_value[1]) / cell_length;
+    CELL_ID_TYPE dim_id_z = (point.z - min_value[2]) / cell_length;
+    CELL_ID_TYPE id = dim_id_x * cell_count[1] * cell_count[2] + dim_id_y * cell_count[2] + dim_id_z;
+    return id;
+}
+
+__global__ void compute_cell_id_kernel(DATA_TYPE_3* points, CELL_ID_TYPE* point_cell_id, int n,
+									   DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= n)
+		return;
+	CELL_ID_TYPE cell_id = get_cell_id(points[idx], min_value, cell_count, cell_length);
+    point_cell_id[idx] = cell_id;
+}
+
+void compute_cell_id(DATA_TYPE_3* points, CELL_ID_TYPE* point_cell_id, int n,
+					 DATA_TYPE* min_value, int* cell_count, DATA_TYPE cell_length) {
+	int block = 256;
+	int grid = (n + block - 1) / block;
+	compute_cell_id_kernel <<<grid, block>>>(points, point_cell_id, n, min_value, cell_count, cell_length);
 }

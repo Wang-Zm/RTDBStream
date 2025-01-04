@@ -9,7 +9,8 @@
 
 #include <sutil/Exception.h>
 #include <sutil/sutil.h>
-#include <sutil/Camera.h>
+#include <sutil/vec_math.h>
+// #include <sutil/Camera.h>
 
 #include <array>
 #include <bitset>
@@ -707,16 +708,19 @@ void make_module(ScanState &state) {
     // By default (usesPrimitiveTypeFlags == 0) it supports custom and triangle primitives
     state.pipeline_compile_options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;
 
-    size_t inputSize = 0;
-    const char *input = sutil::getInputData(OPTIX_SAMPLE_NAME, OPTIX_SAMPLE_DIR, "dbscan.cu", inputSize);
+    // size_t inputSize = 0;
+    // const char *input = sutil::getInputData(OPTIX_SAMPLE_NAME, OPTIX_SAMPLE_DIR, "dbscan.cu", inputSize);
+    const std::string ptx = sutil::getPtxString( OPTIX_SAMPLE_NAME, OPTIX_SAMPLE_DIR, "dbscan.cu" );
     size_t sizeof_log = sizeof(log);
 
     OPTIX_CHECK_LOG(optixModuleCreateFromPTX(
         state.context,
         &module_compile_options,
         &state.pipeline_compile_options,
-        input,
-        inputSize,
+        // input,
+        // inputSize,
+        ptx.c_str(),
+        ptx.size(),
         log,
         &sizeof_log,
         &state.module));

@@ -1,0 +1,183 @@
+DIM[0]: 0, 9930
+[Mem] make_module: 0
+[Mem] make_program_groups: 0
+[Mem] make_pipeline: 0
+[Mem] make_sbt: 2
+[Mem] initialize_params: 10
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 0
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 1
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 2
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 3
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 4
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 5
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 6
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 7
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 8
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Info] checking
+[Step] Finish sliding the window...
+[Step] Warmup 9
+Input file: /home/wzm/dbscan/dbscan-stream/dataset/stock.txt
+Data num: 1048572
+Window size: 100000, Stride size: 25000, K: 2
+Radius: 0.07, Radius2: 0.0049
+Cell length: 0.0404145
+Cell count: 245704, Cell count: 1, Cell count: 1, 
+OPTIMIZATION_LEVEL: 9
+Final GAS size: 3.571045 MB
+[Info] Total stride num: 37
+[Step] Finish sliding the window...
+
+###########   Time  ##########
+[Time] out_stride_bvh: 0 ms
+[Time] out_stride_ray: 0 ms
+[Time] in_stride_bvh: 0 ms
+[Time] in_stride_ray: 0 ms
+[Time] input_data: 0.0415039 ms
+[Time] update_grid: 0.955606 ms
+[Time]  update_h_point_cell_id: 0.377851 ms
+[Time]  sort_h_point_cell_id: 0.302332 ms
+[Time]   sort_new_stride: 0.287327 ms
+[Time]  merge_pos_arr: 0.275206 ms
+[Time] early_cluster: 0.221092 ms
+[Time]  set_sparse_spheres: 0.145825 ms
+[Time]  set_dense_spheres: 0.0141074 ms
+[Time]  compute_offsets: 0 ms
+[Time]  count_sparse_points: 0 ms
+[Time] build_bvh: 0.0375779 ms
+[Time] gen_aabb: 0.00355654 ms
+[Time] find_cores: 0.0128273 ms
+[Time] set_label: 0.00490261 ms
+[Time] hybrid_sphere: 0 ms
+[Time] build_hybrid_bvh: 0 ms
+[Time] set_cluster_id: 0.00960726 ms
+[Time] union_cluster_id: 0.303823 ms
+[Time] free_cell_points: 0 ms
+[Time] pre_process: 1.38775 ms
+[Time] total: 1.70124 ms
+
+[Time] cpu_cluter_total: 0 ms
+[Time] cuda_cluter_total: 0 ms
+[Time] cuda_find_neighbors: 0 ms
+[Time] cuda_set_clusters: 0 ms
+[Time] get_dense_sphere: 0 ms
+[Time] dense_cell_points_copy: 0 ms
+[Time] cell_points_memcpy: 0 ms
+[Time] get_centers_radii: 0 ms
+[Time] compute_uniq_pos_arr: 0 ms
+[Time] set_centers_radii: 0 ms
+
+[Time] find_neighbors_of_cells: 0 ms
+[Time] cluster_dense_cells: 0 ms
+[Time] find_neighbor_cells: 0 ms
+[Time] put_neighbor_cells_list: 0 ms
+[Time] prepare_for_points_in_dense_cells: 0 ms
+##############################
+

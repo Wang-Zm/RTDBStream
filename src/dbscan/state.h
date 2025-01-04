@@ -91,6 +91,8 @@ struct ScanState
 
     unsigned*                           h_ray_hits;
     unsigned*                           h_ray_intersections;
+    long                                intersections_all_window;
+    long                                hits_all_window;
 
     unordered_map<CELL_ID_TYPE, int>            cell_point_num;
     unordered_map<CELL_ID_TYPE, vector<int>>    cell_points;
@@ -162,7 +164,9 @@ void make_sbt(ScanState &state);
 
 void update_grid(ScanState &state, int update_pos, int window_left, int window_right);
 void update_grid_without_vector(ScanState &state, int update_pos, int window_left, int window_right);
-// void update_grid_without_vector_parallel(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_without_vector_parallel(ScanState &state, int update_pos, int window_left, int window_right);
 void update_grid_using_unordered_map(ScanState &state, int update_pos, int window_left, int window_right);
 void update_grid_with_timestamp(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_thrust(ScanState &state, int update_pos, int window_left, int window_right);
+void update_grid_map_gpu(ScanState &state, int update_pos, int window_left, int window_right);
 #endif

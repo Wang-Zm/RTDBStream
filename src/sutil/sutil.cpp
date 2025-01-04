@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+// Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -58,22 +58,12 @@
 #include <memory>
 #include <sstream>
 #include <vector>
-#if defined(_WIN32)
-#    ifndef WIN32_LEAN_AND_MEAN
-#        define WIN32_LEAN_AND_MEAN 1
-#    endif
-#    include<windows.h>
-#    include<mmsystem.h>
-#else
-#    include<sys/time.h>
-#    include <unistd.h>
-#    include <dirent.h>
+#if !defined( _WIN32 )
+#include <dirent.h>
 #endif
-
 
 namespace sutil
 {
-
 
 static bool dirExists( const char* path )
 {
@@ -88,33 +78,6 @@ static bool dirExists( const char* path )
     closedir( dir );
     return true;
 #endif
-}
-
-static bool fileExists( const char* path )
-{
-    std::ifstream str( path );
-    return static_cast<bool>( str );
-}
-
-static bool fileExists( const std::string& path )
-{
-    return fileExists( path.c_str() );
-}
-
-static std::string existingFilePath( const char* directory, const char* relativeSubDir, const char* relativePath )
-{
-    std::string path = directory ? directory : "";
-    if( relativeSubDir )
-    {
-        path += '/';
-        path += relativeSubDir;
-    }
-    if( relativePath )
-    {
-        path += '/';
-        path += relativePath;
-    }
-    return fileExists( path ) ? path : "";
 }
 
 std::string getSampleDir()
@@ -136,72 +99,6 @@ std::string getSampleDir()
     throw Exception( "sutil::getSampleDir couldn't locate an existing sample directory" );
 }
 
-const char* sampleFilePath( const char* relativeSubDir, const char* relativePath )
-{
-    static std::string s;
-
-    // Allow for overrides.
-    static const char* directories[] =
-    {
-        // TODO: Remove the environment variable OPTIX_EXP_SAMPLES_SDK_DIR once SDK 6/7 packages are split
-        getenv( "OPTIX_EXP_SAMPLES_SDK_DIR" ),
-        getenv( "OPTIX_SAMPLES_SDK_DIR" ),
-        SAMPLES_DIR,
-        "."
-    };
-    for( const char* directory : directories )
-    {
-        if( directory )
-        {
-            s = existingFilePath( directory, relativeSubDir, relativePath );
-            if( !s.empty() )
-            {
-                return s.c_str();
-            }
-        }
-    }
-    throw Exception( ( std::string{ "sutil::sampleDataFilePath couldn't locate " } +relativePath ).c_str() );
-}
-
-const char* sampleDataFilePath( const char* relativePath )
-{
-    return sampleFilePath( "data", relativePath );
-}
-
-void parseDimensions( const char* arg, int& width, int& height )
-{
-    // look for an 'x': <width>x<height>
-    size_t width_end    = strchr( arg, 'x' ) - arg;
-    size_t height_begin = width_end + 1;
-
-    if( height_begin < strlen( arg ) )
-    {
-        // find the beginning of the height string/
-        const char* height_arg = &arg[height_begin];
-
-        // copy width to null-terminated string
-        char width_arg[32];
-        strncpy( width_arg, arg, width_end );
-        width_arg[width_end] = '\0';
-
-        // terminate the width string
-        width_arg[width_end] = '\0';
-
-        width  = atoi( width_arg );
-        height = atoi( height_arg );
-        return;
-    }
-    const std::string err = "Failed to parse width, height from string '" + std::string( arg ) + "'";
-    throw std::invalid_argument( err.c_str() );
-}
-
-double currentTime()
-{
-    return std::chrono::duration_cast< std::chrono::duration< double > >
-        ( std::chrono::high_resolution_clock::now().time_since_epoch() ).count();
-}
-
-
 #define STRINGIFY( x ) STRINGIFY2( x )
 #define STRINGIFY2( x ) #x
 #define LINE_STR STRINGIFY( __LINE__ )
@@ -218,34 +115,16 @@ double currentTime()
 static bool readSourceFile( std::string& str, const std::string& filename )
 {
     // Try to open file
-    std::ifstream file( filename.c_str(), std::ios::binary );
+    std::ifstream file( filename.c_str() );
     if( file.good() )
     {
         // Found usable source file
-        std::vector<unsigned char> buffer = std::vector<unsigned char>( std::istreambuf_iterator<char>( file ), {} );
-        str.assign(buffer.begin(), buffer.end());
+        std::stringstream source_buffer;
+        source_buffer << file.rdbuf();
+        str = source_buffer.str();
         return true;
     }
     return false;
-}
-
-// Returns string of file extension including '.'
-static std::string fileExtensionForLoading()
-{
-    std::string extension;
-#if SAMPLES_INPUT_GENERATE_PTX
-    extension = ".ptx";
-#endif
-#if SAMPLES_INPUT_GENERATE_OPTIXIR
-    extension = ".optixir";
-#endif
-    if( const char* ext = getenv("OPTIX_SAMPLES_INPUT_EXTENSION") )
-    {
-        extension = ext;
-        if( extension.size() && extension[0] != '.' )
-            extension = "." + extension;
-    }
-    return extension;
 }
 
 #if CUDA_NVRTC_ENABLED
@@ -277,12 +156,7 @@ static void getCuStringFromFile( std::string& cu, std::string& location, const c
 
 static std::string g_nvrtcLog;
 
-static void getPtxFromCuString( std::string&                    ptx,
-                                const char*                     sample_directory,
-                                const char*                     cu_source,
-                                const char*                     name,
-                                const char**                    log_string,
-                                const std::vector<const char*>& compiler_options )
+static void getPtxFromCuString( std::string& ptx, const char* sample_name, const char* cu_source, const char* name, const char** log_string )
 {
     // Create program
     nvrtcProgram prog = 0;
@@ -295,9 +169,9 @@ static void getPtxFromCuString( std::string&                    ptx,
 
     // Set sample dir as the primary include path
     std::string sample_dir;
-    if( sample_directory )
+    if( sample_name )
     {
-        sample_dir = std::string( "-I" ) + base_dir + '/' + sample_directory;
+        sample_dir = std::string( "-I" ) + base_dir + '/' + sample_name;
         options.push_back( sample_dir.c_str() );
     }
 
@@ -320,6 +194,7 @@ static void getPtxFromCuString( std::string&                    ptx,
     }
 
     // Collect NVRTC options
+    const char*  compiler_options[] = {CUDA_NVRTC_OPTIONS};
     std::copy( std::begin( compiler_options ), std::end( compiler_options ), std::back_inserter( options ) );
 
     // JIT compile CU to PTX
@@ -332,6 +207,7 @@ static void getPtxFromCuString( std::string&                    ptx,
     if( log_size > 1 )
     {
         NVRTC_CHECK_ERROR( nvrtcGetProgramLog( prog, &g_nvrtcLog[0] ) );
+        //std::cout << g_nvrtcLog << std::endl;
         if( log_string )
             *log_string = g_nvrtcLog.c_str();
     }
@@ -350,7 +226,7 @@ static void getPtxFromCuString( std::string&                    ptx,
 
 #else  // CUDA_NVRTC_ENABLED
 
-static std::string sampleInputFilePath( const char* sampleName, const char* fileName )
+static std::string samplePTXFilePath( const char* sampleName, const char* fileName )
 {
     // Allow for overrides.
     static const char* directories[] =
@@ -358,18 +234,12 @@ static std::string sampleInputFilePath( const char* sampleName, const char* file
         // TODO: Remove the environment variable OPTIX_EXP_SAMPLES_SDK_PTX_DIR once SDK 6/7 packages are split
         getenv( "OPTIX_EXP_SAMPLES_SDK_PTX_DIR" ),
         getenv( "OPTIX_SAMPLES_SDK_PTX_DIR" ),
- #if defined(CMAKE_INTDIR)
-        SAMPLES_PTX_DIR "/" CMAKE_INTDIR,
-#endif
         SAMPLES_PTX_DIR,
         "."
     };
 
-    // Allow overriding the file extension
-    std::string extension = fileExtensionForLoading();
-
     if( !sampleName )
-        sampleName = "sutil";
+        sampleName = "cuda_compile_ptx";
     for( const char* directory : directories )
     {
         if( directory )
@@ -379,7 +249,7 @@ static std::string sampleInputFilePath( const char* sampleName, const char* file
             path += sampleName;
             path += "_generated_";
             path += fileName;
-            path += extension;
+            path += ".ptx";
             if( fileExists( path ) )
                 return path;
         }
@@ -392,9 +262,9 @@ static std::string sampleInputFilePath( const char* sampleName, const char* file
     throw Exception( error.c_str() );
 }
 
-static void getInputDataFromFile( std::string& ptx, const char* sample_name, const char* filename )
+static void getPtxStringFromFile( std::string& ptx, const char* sample_name, const char* filename )
 {
-    const std::string sourceFilePath = sampleInputFilePath( sample_name, filename );
+    const std::string sourceFilePath = samplePTXFilePath( sample_name, filename );
 
     // Try to open source PTX file
     if( !readSourceFile( ptx, sourceFilePath ) )
@@ -417,12 +287,7 @@ struct PtxSourceCache
 };
 static PtxSourceCache g_ptxSourceCache;
 
-const char* getInputData( const char*                     sample,
-                          const char*                     sampleDir,
-                          const char*                     filename,
-                          size_t&                         dataSize,
-                          const char**                    log,
-                          const std::vector<const char*>& compilerOptions )
+const char* getPtxString( const char* sample, const char* sampleDir, const char* filename, const char** log )
 {
     if( log )
         *log = NULL;
@@ -435,12 +300,11 @@ const char* getInputData( const char*                     sample,
     {
         ptx = new std::string();
 #if CUDA_NVRTC_ENABLED
-        SUTIL_ASSERT( fileExtensionForLoading() == ".ptx" );
         std::string location;
         getCuStringFromFile( cu, location, sampleDir, filename );
-        getPtxFromCuString( *ptx, sampleDir, cu.c_str(), location.c_str(), log, compilerOptions );
+        getPtxFromCuString( *ptx, sample, cu.c_str(), location.c_str(), log );
 #else
-        getInputDataFromFile( *ptx, sample, filename );
+        getPtxStringFromFile( *ptx, sample, filename );
 #endif
         g_ptxSourceCache.map[key] = ptx;
     }
@@ -448,36 +312,8 @@ const char* getInputData( const char*                     sample,
     {
         ptx = elem->second;
     }
-    dataSize = ptx->size();
+
     return ptx->c_str();
-}
-
-void ensureMinimumSize( int& w, int& h )
-{
-    if( w <= 0 )
-        w = 1;
-    if( h <= 0 )
-        h = 1;
-}
-
-void ensureMinimumSize( unsigned& w, unsigned& h )
-{
-    if( w == 0 )
-        w = 1;
-    if( h == 0 )
-        h = 1;
-}
-
-void reportErrorMessage( const char* message )
-{
-    std::cerr << "OptiX Error: '" << message << "'\n";
-#if defined( _WIN32 ) && defined( RELEASE_PUBLIC )
-    {
-        char s[2048];
-        sprintf( s, "OptiX Error: %s", message );
-        MessageBoxA( 0, s, "OptiX Error", MB_OK | MB_ICONWARNING | MB_SYSTEMMODAL );
-    }
-#endif
 }
 
 } // namespace sutil

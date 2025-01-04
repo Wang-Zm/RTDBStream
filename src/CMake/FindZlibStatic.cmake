@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2021 NVIDIA Corporation.  All rights reserved.
+#  Copyright (c) 2019 NVIDIA Corporation.  All rights reserved.
 #
 #  NVIDIA Corporation and its licensors retain all intellectual property and proprietary
 #  rights in and to this software, related documentation and any modifications thereto.
@@ -76,8 +76,8 @@ find_package_handle_standard_args( ZlibStatic
 if( ZlibStatic_FOUND )
     add_library( Zlib::Static STATIC IMPORTED )
     set_target_properties( Zlib::Static PROPERTIES 
-        # Use the release configuration by default
-        IMPORTED_LOCATION ${ZlibStatic_LIBRARY_RELEASE}
-        IMPORTED_LOCATION_DEBUG ${ZlibStatic_LIBRARY_DEBUG} )
+        IMPORTED_LOCATION_RELEASE ${ZlibStatic_LIBRARY_RELEASE}
+        IMPORTED_LOCATION_DEBUG ${ZlibStatic_LIBRARY_DEBUG}
+        MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE )
     set_property( TARGET Zlib::Static APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR} )
 endif()

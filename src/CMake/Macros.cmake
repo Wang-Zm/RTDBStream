@@ -1,6 +1,6 @@
 
 #
-#  Copyright (c) 2008 - 2021 NVIDIA Corporation.  All rights reserved.
+#  Copyright (c) 2008 - 2009 NVIDIA Corporation.  All rights reserved.
 #
 #  NVIDIA Corporation and its licensors retain all intellectual property and proprietary
 #  rights in and to this software, related documentation and any modifications thereto.
@@ -227,34 +227,6 @@ function(compile_llvm_runtime input symbol output_var)
     )
   #bc_to_cpp(${opt_bc} ${bin2c_files} ${symbol})
   ll_to_cpp(${opt_ll} ${bin2c_files} ${symbol})
-
-  set_source_files_properties( ${bin2c_files} PROPERTIES GENERATED TRUE )
-
-  set(${output_var} ${bin2c_files} PARENT_SCOPE)
-endfunction()
-
-
-################################################################################
-# Assemble the ll file to bitcode using llvm-as and use bin2c to take the
-# resulting code and embed it into a cpp for loading at runtime.
-#
-# Usage: compile_llvm( input symbol symbol output_var [clang args] )
-#   input      : [in]  File to be assembled
-#   symbol     : [in]  Name of C symbol to use for accessing the generated code.  Also used to generate the output file names.
-#   output_var : [out] Generated cpp and header files used to access compiled code at runtime
-#
-
-function(assemble_llvm input symbol output_var)
-  set(OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-  get_filename_component(base "${input}" NAME_WE)
-  get_filename_component(name "${input}" NAME)
-
-  set(bin2c_files
-    "${CMAKE_CURRENT_BINARY_DIR}/${symbol}.cpp"
-    "${CMAKE_CURRENT_BINARY_DIR}/${symbol}.h"
-    )
-  #bc_to_cpp(${opt_bc} ${bin2c_files} ${symbol})
-  ll_to_cpp(${input} ${bin2c_files} ${symbol})
 
   set_source_files_properties( ${bin2c_files} PROPERTIES GENERATED TRUE )
 

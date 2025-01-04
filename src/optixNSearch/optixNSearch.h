@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+// Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -25,23 +25,54 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
+#pragma once
 
+#include <vector_types.h>
+#include <optix_types.h>
+#include <sutil/vec_math.h>
 
-#include <sutil/Camera.h>
-
-namespace sutil {
-
-void Camera::UVWFrame(float3& U, float3& V, float3& W) const
+enum ParticleType
 {
-    W = m_lookat - m_eye; // Do not normalize W -- it implies focal length
-    float wlen = length(W);
-    U = normalize(cross(W, m_up));
-    V = normalize(cross(U, W));
+    POINT = 0,
+    QUERY = 1
+};
 
-    float vlen = wlen * tanf(0.5f * m_fovY * M_PIf / 180.0f);
-    V *= vlen;
-    float ulen = vlen * m_aspectRatio;
-    U *= ulen;
-}
+// TODO: really only need 1.
+enum RayType
+{
+    RAY_TYPE_RADIANCE  = 0,
+    RAY_TYPE_OCCLUSION = 1,
+    RAY_TYPE_COUNT
+};
 
-} // namespace sutil
+enum SearchType
+{
+    PRECISE = 0, // test against the sphere
+    AABBTEST = 1, // test against the AABB
+    NOTEST = 2 // test against nothing
+};
+
+struct Params
+{
+    unsigned int*    frame_buffer;
+    float3*          points;
+    float3*          queries;
+    float            radius;
+    unsigned int*    d_r2q_map;
+    unsigned int     limit; // 1 for the initial run to sort indices; knn for future runs.
+    SearchType       mode;
+
+    OptixTraversableHandle handle;
+};
+
+struct MissData
+{
+};
+
+struct GeomData
+{
+};
+
+struct HitGroupData
+{
+};

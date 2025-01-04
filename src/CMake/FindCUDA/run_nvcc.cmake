@@ -1,6 +1,6 @@
 #  James Bigler, NVIDIA Corp (nvidia.com - jbigler)
 #
-#  Copyright (c) 2008 - 2021 NVIDIA Corporation.  All rights reserved.
+#  Copyright (c) 2008 - 2009 NVIDIA Corporation.  All rights reserved.
 #
 #  This code is licensed under the MIT License.  See the FindCUDA.cmake script
 #  for the text of the license.
@@ -54,9 +54,6 @@
 # check_dependencies:BOOL=<> Check the dependencies.  If everything is up to
 #                            date, simply touch the output file instead of
 #                            generating it.
-
-# Support IN_LIST
-cmake_policy(SET CMP0057 NEW)
 
 if(NOT generated_file)
   message(FATAL_ERROR "You must specify generated_file on the command line")
@@ -154,15 +151,10 @@ endif()
 #
 # Make this a macro instead of a function, so that things like RESULT_VARIABLE
 # and other return variables are present after executing the process.
-function(cuda_execute_process status command)
+macro(cuda_execute_process status command)
   set(_command ${command})
   if(NOT "x${_command}" STREQUAL "xCOMMAND")
     message(FATAL_ERROR "Malformed call to cuda_execute_process.  Missing COMMAND as second argument. (command = ${command})")
-  endif()
-  # nvcc warns when specifying -G and --lineinfo, which is annoying.
-  if("-G" IN_LIST ARGN)
-    list(REMOVE_ITEM ARGN "-lineinfo")
-    list(REMOVE_ITEM ARGN "--lineinfo")
   endif()
   if(verbose)
     execute_process(COMMAND "${CMAKE_COMMAND}" -E echo -- ${status})
@@ -185,7 +177,7 @@ function(cuda_execute_process status command)
   endif()
   # Run the command
   execute_process(COMMAND ${ARGN} RESULT_VARIABLE CUDA_result )
-endfunction()
+endmacro()
 
 # For CUDA 2.3 and below, -G -M doesn't work, so remove the -G flag
 # for dependency generation and hope for the best.

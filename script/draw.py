@@ -497,12 +497,13 @@ def time_distribution():
 
 def overall_time(colors):
     record_x_name = ["STK", "RBF", "TAO", "Geolife"]
-    record_labels = ["DISC", "DenForest", "CUDA", "RTDBStream"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
         [940, 48.3, 266, 5020],
         [1411, 33.2, 252, 3943],
-        [258.878, 9.56766, 8.97754, 1084.31],
-        [3.30915, 0.769084, 1.65166, 16.5955]
+        [7.762652, 0.881185, 8.010665, 98.083338],
+        [1.713436, 1.051327, 1.392579, 4.627078],
+        [1.43628, 0.490483, 0.55197, 3.3452]
     ]
     common_draw_bar_hatch(
                 total_time, record_labels, record_x_name, 
@@ -515,18 +516,17 @@ def overall_time(colors):
                 legend_size=26,
                 common_font_size=26,
                 columnspacing=0.8,
-                lengent_ncol=1,
-                legend_pos='best')
+                lengent_ncol=2,
+                legend_pos='upper left',
+                ymax=6e6)
 
 def running_time_breakdown(colors):
     record_x_name = ["STK", "RBF", "TAO", "Geolife"]
-    record_labels = ["Naive", "FC", "FC+HS", "FC+HS+HC"]
+    record_labels = ["Naive", "ICG", "ICG+CMRS"]
     total_time = [
-        [21.8937, 1.5307, 10.0716, 112.073],
-        [13.1426, 1.07192, 4.1214, 66.3397],
-        [3.8762, 0.957166, 1.71667, 18.1606],
-        [3.30915, 0.769084, 1.65166, 16.5955]
-
+        [16.6926, 1.08912, 7.19273, 83.7277],
+        [11.3769, 0.891431, 3.48714, 54.7018],
+        [1.43628, 0.490483, 0.55197, 3.3452],
     ]
     common_draw_bar_hatch(
                 total_time, record_labels, record_x_name, 

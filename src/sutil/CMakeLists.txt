@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -28,35 +28,39 @@
 
 set(sources
     ${CMAKE_CURRENT_BINARY_DIR}/../sampleConfig.h
-    # ${SAMPLES_CUDA_DIR}/sphere.cu
-    # ${SAMPLES_CUDA_DIR}/whitted.cu
-    # ${SAMPLES_CUDA_DIR}/BufferView.h
-    # ${SAMPLES_CUDA_DIR}/GeometryData.h
-    # ${SAMPLES_CUDA_DIR}/Light.h
-    # ${SAMPLES_CUDA_DIR}/LocalGeometry.h
-    # ${SAMPLES_CUDA_DIR}/MaterialData.h
-    # ${SAMPLES_CUDA_DIR}/util.h
-    # ${SAMPLES_CUDA_DIR}/helpers.h
-    Aabb.h
-    Camera.cpp
-    Camera.h
-    # CUDAOutputBuffer.h
+    #${SAMPLES_CUDA_DIR}/sphere.cu
+    #${SAMPLES_CUDA_DIR}/whitted.cu
+    #${SAMPLES_CUDA_DIR}/BufferView.h
+    #${SAMPLES_CUDA_DIR}/GeometryData.h
+    #${SAMPLES_CUDA_DIR}/Light.h
+    #${SAMPLES_CUDA_DIR}/LocalGeometry.h
+    #${SAMPLES_CUDA_DIR}/MaterialData.h
+    #${SAMPLES_CUDA_DIR}/util.h
+    #${SAMPLES_CUDA_DIR}/helpers.h
+    #Aabb.h
+    #Camera.cpp
+    #Camera.h
+    #CUDAOutputBuffer.h
     Exception.h
-    # GLDisplay.cpp
-    # GLDisplay.h
-    # Matrix.h
-    # PPMLoader.cpp
-    # PPMLoader.h
+    #GLDisplay.cpp
+    #GLDisplay.h
+    IDFactory.cpp
+    IDFactory.h
+    #Matrix.h
+    #PPMLoader.cpp
+    #PPMLoader.h
     Preprocessor.h
-    # Quaternion.h
-    # Record.h
-    # Scene.cpp
-    # Scene.h
+    #Quaternion.h
+    #Record.h
+    #Scene.cpp
+    #Scene.h
     sutilapi.h
     sutil.cpp
     sutil.h
-    # Trackball.cpp
-    # Trackball.h
+    Timing.cpp
+    Timing.h
+    #Trackball.cpp
+    #Trackball.h
     vec_math.h
     )
 
@@ -65,24 +69,20 @@ set(sources
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 if(NOT CUDA_NVRTC_ENABLED)
-  OPTIX_sutil_compile_to_optix_input(ptx_files ${sources})
-else()
-  set(ptx_files)
+  CUDA_COMPILE_PTX(ptx_files ${sources})
 endif()
-
-OPTIX_add_source_groups()
 
 # Make the library.
 set(sutil_target "sutil_7_sdk")
-add_library(${sutil_target} ${sources} ${ptx_files})
+add_library(${sutil_target} ${sources})
 if( WIN32 )
   target_compile_definitions( ${sutil_target} PUBLIC GLAD_GLAPI_EXPORT )
 endif()
 
 target_link_libraries(${sutil_target} LINK_PRIVATE
-  # ${GLFW_LIB_NAME}
-  # glad
-  # imgui
+  #${GLFW_LIB_NAME}
+  #glad
+  #imgui
   ${CUDA_LIBRARIES}
   )
 
