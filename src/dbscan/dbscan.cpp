@@ -2046,19 +2046,10 @@ void search(ScanState &state, bool timing) {
     // * Initialize the first window
     CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
     make_gas(state);
-    for (int i = 0; i < state.window_size; i++) {
-        CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
-        state.h_point_cell_id[i] = cell_id;
-    }
-    CUDA_CHECK(cudaMemcpy(state.params.point_cell_id, state.h_point_cell_id, state.window_size * sizeof(CELL_ID_TYPE), cudaMemcpyHostToDevice));
-    for (int i = 0; i < state.window_size; i++) state.pos_arr[i] = i;
-    sort(state.pos_arr, state.pos_arr + state.window_size, 
-         [point_cell_id = state.h_point_cell_id](size_t i1, size_t i2) { 
-            return point_cell_id[i1] == point_cell_id[i2] ? i1 < i2 : point_cell_id[i1] < point_cell_id[i2];
-         });
-    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
+    compute_cell_id(state.params.window, state.params.point_cell_id, state.window_size, state.params.min_value,
+                    state.params.cell_count, state.params.cell_length);
+    sortByCellIdAndOrder(state.params.pos_arr, state.params.point_cell_id, state.window_size, 0);
     // * Start sliding
-    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
     while (remaining_data_num >= state.stride_size) {
@@ -2066,7 +2057,6 @@ void search(ScanState &state, bool timing) {
         timer.startTimer(&timer.pre_process);
         
         timer.startTimer(&timer.input_data);
-        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         CUDA_CHECK(cudaMemcpy(state.params.window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
         timer.stopTimer(&timer.input_data);
         

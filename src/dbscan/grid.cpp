@@ -191,7 +191,6 @@ void update_grid_thrust(ScanState &state, int update_pos, int window_left, int w
     int stride_left = update_pos * state.stride_size;
     compute_cell_id(state.params.window + stride_left, state.params.point_cell_id + stride_left, state.stride_size,
                     state.params.min_value, state.params.cell_count, state.params.cell_length);
-    cudaMemcpy(state.h_point_cell_id + stride_left, state.params.point_cell_id + stride_left, state.stride_size * sizeof(CELL_ID_TYPE), cudaMemcpyDeviceToHost);
     timer.stopTimer(&timer.update_h_point_cell_id);
 
     // 排序 new_pos_arr
