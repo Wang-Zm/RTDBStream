@@ -3,8 +3,8 @@
 
 #include <cuda_runtime.h>
 
-#define DEBUG_INFO 1
-#define OPTIMIZATION_LEVEL 0 // 2 无用，early cluster 无效果
+#define DEBUG_INFO 0
+#define OPTIMIZATION_LEVEL 9 // 2 无用，early cluster 无效果
 
 // typedef double DATA_TYPE;
 // typedef double3 DATA_TYPE_3;
@@ -70,7 +70,10 @@ struct Params {
 
     unsigned*               ray_primitive_hits;
     unsigned*               ray_intersections;
+    unsigned*               ray_primitive_hits_cluster;
+    unsigned*               ray_intersections_cluster;
     unsigned*               cluster_ray_intersections;
+    unsigned*               num_dist_calculations;
 
     // DATA_TYPE_3*            c_centers;
     // DATA_TYPE*              c_radii;

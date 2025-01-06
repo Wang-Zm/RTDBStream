@@ -91,6 +91,9 @@ void initialize_params(ScanState &state) {
 #if DEBUG_INFO == 1
     CUDA_CHECK(cudaMalloc(&state.params.ray_intersections, state.window_size * sizeof(unsigned)));
     CUDA_CHECK(cudaMalloc(&state.params.ray_primitive_hits, state.window_size * sizeof(unsigned)));
+    CUDA_CHECK(cudaMalloc(&state.params.ray_intersections_cluster, state.window_size * sizeof(unsigned)));
+    CUDA_CHECK(cudaMalloc(&state.params.ray_primitive_hits_cluster, state.window_size * sizeof(unsigned)));
+    CUDA_CHECK(cudaMalloc(&state.params.num_dist_calculations, sizeof(unsigned)));
     state.h_ray_intersections = (unsigned *) malloc(state.window_size * sizeof(unsigned));
     state.h_ray_hits = (unsigned *) malloc(state.window_size * sizeof(unsigned));
 #endif
@@ -147,25 +150,57 @@ void print_rt_info(ScanState &state) {
         total_intersections += state.h_ray_intersections[i];
         total_hits += state.h_ray_hits[i];
     }
+    state.intersections_all_window += total_intersections;
+    state.hits_all_window += total_hits;
     // long avg_intersections = total_intersections / state.window_size;
     // long avg_hits = total_hits / state.window_size;
     // printf("total_intersections: %ld\n", total_intersections);
     // printf("total_hits: %ld\n", total_hits);
     // printf("avg_intersections: %ld\n", avg_intersections);
     // printf("avg_hits: %ld\n", avg_hits);
-    state.intersections_all_window += total_intersections;
-    state.hits_all_window += total_hits;
+    CUDA_CHECK(cudaMemcpy(state.h_ray_intersections, state.params.ray_intersections_cluster, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(state.h_ray_hits, state.params.ray_primitive_hits_cluster, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
+    total_intersections = 0, total_hits = 0;
+    for (int i = 0; i < state.window_size; i++) {
+        total_intersections += state.h_ray_intersections[i];
+        total_hits += state.h_ray_hits[i];
+    }
+    state.intersections_all_window_cluster += total_intersections;
+    state.hits_all_window_cluster += total_hits;
+    
+    state.num_spheres_all_window += state.params.center_num;
+    
+    unsigned num_dist_calculations;
+    CUDA_CHECK(cudaMemcpy(&num_dist_calculations, state.params.num_dist_calculations, sizeof(unsigned), cudaMemcpyDeviceToHost));
+    state.num_dist_calculations_all_window += num_dist_calculations;
 }
 
-void print_overall_rt_info(ScanState &state, int num_slides) {
-    long avg_intersections = state.intersections_all_window / num_slides;
-    long avg_hits = state.hits_all_window / num_slides;
-    double avg_intersections_per_ray = 1.0 * state.intersections_all_window / num_slides / state.num_rays_in_window;
-    double avg_hits_per_ray = 1.0 * state.hits_all_window / num_slides / state.num_rays_in_window;
+void print_overall_rt_info(ScanState &state, int num_strides) {
+    long avg_intersections = state.intersections_all_window / num_strides;
+    long avg_hits = state.hits_all_window / num_strides;
+    double avg_intersections_per_ray = 1.0 * state.intersections_all_window / num_strides / state.num_rays_in_window;
+    double avg_hits_per_ray = 1.0 * state.hits_all_window / num_strides / state.num_rays_in_window;
+    
+    long avg_intersections_cluster = state.intersections_all_window_cluster / num_strides;
+    long avg_hits_cluster = state.hits_all_window_cluster / num_strides;
+    double avg_intersections_per_ray_cluster = 1.0 * state.intersections_all_window_cluster / num_strides / state.num_rays_in_window;
+    double avg_hits_per_ray_cluster = 1.0 * state.hits_all_window_cluster / num_strides / state.num_rays_in_window;
+    
     printf("avg intersections for each window: %ld\n", avg_intersections);
     printf("avg hits for each window: %ld\n", avg_hits);
     printf("avg intersections for each window per ray: %lf\n", avg_intersections_per_ray);
     printf("avg hits for each window per ray: %lf\n", avg_hits_per_ray);
+    
+    printf("avg intersections for each window cluster: %ld\n", avg_intersections_cluster);
+    printf("avg hits for each window cluster: %ld\n", avg_hits_cluster);
+    printf("avg intersections for each window per ray cluster: %lf\n", avg_intersections_per_ray_cluster);
+    printf("avg hits for each window per ray cluster: %lf\n", avg_hits_per_ray_cluster);
+    
+    double avg_num_spheres = 1.0 * state.num_spheres_all_window / num_strides;
+    printf("avg num spheres for each window: %lf\n", avg_num_spheres);
+
+    double avg_num_dist_calculations = 1.0 * state.num_dist_calculations_all_window / num_strides;
+    printf("avg num dist calculations for each window: %lf\n", avg_num_dist_calculations);
 }
 
 inline DATA_TYPE_3 compute_cell_center(ScanState& state, DATA_TYPE_3& point) {
@@ -2060,6 +2095,14 @@ void search_grid_cores_gpu(ScanState &state, bool timing) {
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
     while (remaining_data_num >= state.stride_size) {
+#if DEBUG_INFO == 1
+        CUDA_CHECK(cudaMemset(state.params.ray_intersections, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_intersections_cluster, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits_cluster, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.num_dist_calculations, 0, sizeof(int)));
+#endif
+        
         timer.startTimer(&timer.total);
         timer.startTimer(&timer.pre_process);
         
@@ -2122,6 +2165,9 @@ void search_grid_cores_gpu(ScanState &state, bool timing) {
         // printf("[Time] Total process: %lf ms\n", timer.total);
         // timer.total = 0.0;
         if (!timing) if (!check(state, stride_num, timer)) { exit(1); }
+#if DEBUG_INFO == 1
+        print_rt_info(state);
+#endif
         // printf("[Step] Finish window %d\n", stride_num);
     }
     printf("[Step] Finish sliding the window...\n");
@@ -2149,6 +2195,9 @@ void search(ScanState &state, bool timing) {
 #if DEBUG_INFO == 1
         CUDA_CHECK(cudaMemset(state.params.ray_intersections, 0, state.window_size * sizeof(int)));
         CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_intersections_cluster, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits_cluster, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.num_dist_calculations, 0, sizeof(int)));
 #endif
 
         timer.startTimer(&timer.total);
@@ -2295,6 +2344,9 @@ void cleanup(ScanState &state) {
 #if DEBUG_INFO == 1
     CUDA_CHECK(cudaFree(state.params.ray_primitive_hits));
     CUDA_CHECK(cudaFree(state.params.ray_intersections));
+    CUDA_CHECK(cudaFree(state.params.ray_primitive_hits_cluster));
+    CUDA_CHECK(cudaFree(state.params.ray_intersections_cluster));
+    CUDA_CHECK(cudaFree(state.params.num_dist_calculations));
     free(state.h_ray_hits);
     free(state.h_ray_intersections);
 #endif
@@ -2341,7 +2393,7 @@ int main(int argc, char *argv[]) {
     initialize_params(state);
     
     // Warmup
-    for (int i = 0; i < 0; i++) {
+    for (int i = 0; i < 10; i++) {
 #if OPTIMIZATION_LEVEL == 9
         search(state, !state.check);
         // search_grid_cores_hybrid_bvh_op(state, !state.check);
@@ -2375,6 +2427,10 @@ int main(int argc, char *argv[]) {
 
     state.intersections_all_window = 0;
     state.hits_all_window = 0;
+    state.intersections_all_window_cluster = 0;
+    state.hits_all_window_cluster = 0;
+    state.num_spheres_all_window = 0;
+    state.num_dist_calculations_all_window = 0;
     // Timing
 #if OPTIMIZATION_LEVEL == 9
     search(state, true);
@@ -2388,6 +2444,7 @@ int main(int argc, char *argv[]) {
     // search_grid_cores_like_rtod(state, true);
     // search_grid_cores_like_rtod_friendly_gpu_grid_storing(state, true);
     search_grid_cores_gpu(state, true);
+    state.num_rays_in_window = state.window_size;
 #elif OPTIMIZATION_LEVEL == 4
     search_async(state, true);
 #elif OPTIMIZATION_LEVEL == 3

@@ -314,8 +314,8 @@ extern "C" __global__ void __raygen__cluster() {
             op
             );
 #if DEBUG_INFO == 1
-    atomicAdd(&params.ray_primitive_hits[idx.x], hit_num);
-    atomicAdd(&params.ray_intersections[idx.x], intersection_test_num);
+    atomicAdd(&params.ray_primitive_hits_cluster[idx.x], hit_num);
+    atomicAdd(&params.ray_intersections_cluster[idx.x], intersection_test_num);
 #endif
     // atomicAdd(params.cluster_ray_intersections, intersection_test_num);
 }
@@ -338,6 +338,9 @@ extern "C" __global__ void __intersection__cluster() {
     const DATA_TYPE_3 point    = params.window[primIdx];
     DATA_TYPE_3 O = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
     DATA_TYPE sqdist = O.x * O.x + O.y * O.y + O.z * O.z;
+#if DEBUG_INFO == 1
+    atomicAdd(params.num_dist_calculations, 1);
+#endif
     if (sqdist >= params.radius2) return;
     if (params.label[primIdx] == 0) {
         unite(ray_id, primIdx, params.cluster_id);
@@ -353,13 +356,18 @@ extern "C" __global__ void __intersection__cluster() {
 extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
-
+#if DEBUG_INFO == 1
+    optixSetPayload_0(optixGetPayload_0() + 1);
+#endif
     int prim_idx_in_window = *params.cell_points[primIdx];
     if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) 
         return;
 
     if (primIdx < params.sparse_num) {
         DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
+#if DEBUG_INFO == 1
+        atomicAdd(params.num_dist_calculations, 1);
+#endif
         if (sqdist >= params.radius2) return;
         if (params.label[prim_idx_in_window] == 0) {
             unite(ray_id, prim_idx_in_window, params.cluster_id);
@@ -376,6 +384,9 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
             // if (find_repres(ray_id, params.cluster_id) == find_repres(points_in_cell[i], params.cluster_id))
             //     break;
             DATA_TYPE dist = compute_dist(ray_id, points_in_cell[i], params.window, params.window);
+#if DEBUG_INFO == 1
+            atomicAdd(params.num_dist_calculations, 1);
+#endif
             if (dist < params.radius2) {
                 unite(ray_id, points_in_cell[i], params.cluster_id);
                 break;

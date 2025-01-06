@@ -94,7 +94,11 @@ struct ScanState
     unsigned*                           h_ray_intersections;
     long                                intersections_all_window;
     long                                hits_all_window;
+    long                                intersections_all_window_cluster;
+    long                                hits_all_window_cluster;
     int                                 num_rays_in_window;
+    long                                num_spheres_all_window;
+    long                                num_dist_calculations_all_window;
 
     unordered_map<CELL_ID_TYPE, int>            cell_point_num;
     unordered_map<CELL_ID_TYPE, vector<int>>    cell_points;
