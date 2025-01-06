@@ -14,6 +14,7 @@
 // #define COMPUTE_CELL_CENTER // * ineffective
 // #define USE_OMP // * Low performance
 // #define GRID_VECTOR // * Low performance
+// #define USE_SYNC
 
 using namespace std;
 

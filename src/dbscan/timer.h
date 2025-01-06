@@ -22,7 +22,7 @@ class Timer{
   double hybrid_sphere;
   double build_hybrid_bvh;
 
-  double input_data;
+  double transfer_data;
   double pre_process;
   double update_grid;
   double early_cluster;
@@ -101,7 +101,7 @@ class Timer{
     hybrid_sphere = 0;
     build_hybrid_bvh = 0;
 
-    input_data = 0;
+    transfer_data = 0;
     pre_process = 0;
     update_grid = 0;
     early_cluster = 0;
@@ -183,7 +183,7 @@ class Timer{
     cout << "[Time] in_stride_bvh: " << in_stride_bvh / query_num << " ms" << endl;
     cout << "[Time] in_stride_ray: " << in_stride_ray / query_num << " ms" << endl;
 
-    cout << "[Time] input_data: " << input_data / query_num << " ms" << endl;
+    cout << "[Time] transfer_data: " << transfer_data / query_num << " ms" << endl;
     cout << "[Time] update_grid: " << update_grid / query_num << " ms" << endl;
     cout << "[Time]  update_h_point_cell_id: " << update_h_point_cell_id / query_num << " ms" << endl;
     cout << "[Time]  sort_h_point_cell_id: " << sort_h_point_cell_id / query_num << " ms" << endl;

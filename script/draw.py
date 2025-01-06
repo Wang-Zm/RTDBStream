@@ -463,19 +463,21 @@ def draw_vary_ray_num():
                 BAR=False,
                 selfdef_figsize=(8,6))
 
-def time_distribution():
-    record_x_name = ['GAU', 'STK', 'TAO']
+def time_distribution(colors):
+    record_x_name = ['STK', 'RBF', 'TAO', 'GeoLife']
     record_labels = [
         'Transferring Data',
         'Updating Units',
-        'Building the BVH tree',
-        'Detecting Outliers',
+        'Building BVH tree',
+        'Identifying Cores',
+        'Clustering',
     ]
     time = [
-        [0.025119, 0.023305, 0.0125783],
-        [0.103257, 0.085829, 0.0161487],
-        [0.190374, 0.189113, 0.168299],
-        [0.168199, 0.089309, 0.198239],
+        [0.0479239, 0.0146973, 0.0139046, 0.0967642],
+        [0.152525, 0.0895182, 0.0864128, 0.168669],
+        [0.343448, 0.2078332, 0.245984, 0.787935],
+        [0.0398505, 0.0580811, 0.0563122, 0.113625],
+        [0.271402, 0.106079, 0.255189, 1.14684],
     ]
     draw_stacking(time,
                   record_labels,
@@ -485,14 +487,13 @@ def time_distribution():
                   colorOffset=0,
                   x_axis_name='Dataset',
                   y_axis_name='Time (ms)',
-                  legendsize=26,
+                  legendsize=24.5,
                   common_font_size=26,
                   lengent_ncol=2,
-                  ymax=0.73,
-                  legend_pos=1,
-                  #   columnspacing=0.6,
-                  #   colors=['#d6a9aa', "lightgreen", 'xkcd:jade', 'dodgerblue', 'gold',],
-                  colors=["lightgreen", 'xkcd:jade', 'dodgerblue', 'gold', ],
+                #   ymax=0.73,
+                  legend_pos='upper left',
+                    columnspacing=0.4,
+                  colors=colors,
                   )
 
 def overall_time(colors):
@@ -520,7 +521,7 @@ def overall_time(colors):
                 legend_pos='upper left',
                 ymax=6e6)
 
-def running_time_breakdown(colors):
+def optimization_effects(colors):
     record_x_name = ["STK", "RBF", "TAO", "Geolife"]
     record_labels = ["Naive", "ICG", "ICG+CMRS"]
     total_time = [
@@ -530,7 +531,7 @@ def running_time_breakdown(colors):
     ]
     common_draw_bar_hatch(
                 total_time, record_labels, record_x_name, 
-                "pic/running-time-breakdown.pdf",
+                "pic/optimization-effects.pdf",
                 colors=colors,
                 selfdef_figsize=(12, 6),
                 x_axis_name='Dataset',
@@ -899,10 +900,10 @@ def vary_legend(colors):
                 BAR=False)
 
 # draw_vary_ray_num()
-# time_distribution()
 colors = ["#e6b745", "#e64b35", "xkcd:jade", "dodgerblue", "gold"]
 # overall_time(colors)
-running_time_breakdown(colors)
+# optimization_effects(colors)
+time_distribution(colors)
 # overall_memory(colors + ["gold"])
 # vary_window_size(colors)
 # vary_slide_size(colors)

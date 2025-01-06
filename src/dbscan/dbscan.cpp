@@ -498,7 +498,6 @@ void set_hybrid_aabb(ScanState &state) { // TODO：如果可以把这部分放�
 }
 
 void set_hybrid_aabb_gpu(ScanState &state) {
-    timer.startTimer(&timer.early_cluster);
     // 1.计算 offsets
     timer.startTimer(&timer.compute_offsets);
     // CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
@@ -540,7 +539,6 @@ void set_hybrid_aabb_gpu(ScanState &state) {
                             state.params.min_value, state.params.cell_length);
     // CUDA_SYNC_CHECK();
     timer.stopTimer(&timer.set_centers_radii);
-    timer.stopTimer(&timer.early_cluster);
 }
 
 void get_centers_radii_device(ScanState &state) {
@@ -1967,10 +1965,10 @@ void search_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
         timer.startTimer(&timer.total);
         timer.startTimer(&timer.pre_process);
         
-        timer.startTimer(&timer.input_data);
+        timer.startTimer(&timer.transfer_data);
         memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         CUDA_CHECK(cudaMemcpy(state.params.window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-        timer.stopTimer(&timer.input_data);
+        timer.stopTimer(&timer.transfer_data);
         
         timer.startTimer(&timer.update_grid);
 #ifdef USE_OMP
@@ -2056,41 +2054,66 @@ void search(ScanState &state, bool timing) {
         timer.startTimer(&timer.total);
         timer.startTimer(&timer.pre_process);
         
-        timer.startTimer(&timer.input_data);
+        timer.startTimer(&timer.transfer_data);
         CUDA_CHECK(cudaMemcpy(state.params.window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
-        timer.stopTimer(&timer.input_data);
+        timer.stopTimer(&timer.transfer_data);
         
         timer.startTimer(&timer.update_grid);
         update_grid_thrust(state, update_pos, window_left, window_right);
+#ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
         timer.stopTimer(&timer.update_grid);
         
+        timer.startTimer(&timer.early_cluster);
         set_hybrid_aabb_gpu(state);
+#ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
+        timer.stopTimer(&timer.early_cluster);
+        
         timer.startTimer(&timer.build_bvh);
         make_gas_by_sparse_points(state, timer);
+#ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
         timer.stopTimer(&timer.build_bvh);
         
+        timer.startTimer(&timer.find_cores);
         CUDA_CHECK(cudaMemset(state.params.nn, 0, state.params.sparse_num * sizeof(int)));
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        timer.startTimer(&timer.find_cores);
         OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.window_size, 1, 1));
-        timer.stopTimer(&timer.find_cores);
+#ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
         timer.startTimer(&timer.set_label);
         CUDA_CHECK(cudaMemset(state.params.label, 0, state.window_size * sizeof(int)));
         set_label(state.params.cell_points, state.params.nn, state.min_pts, state.params.label, state.params.sparse_num);
+#ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
         timer.stopTimer(&timer.set_label);
+        timer.stopTimer(&timer.find_cores);
         timer.stopTimer(&timer.pre_process);
 
-        // 构建好 hybrid BVH tree 后聚类
         timer.startTimer(&timer.set_cluster_id);
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
-        timer.stopTimer(&timer.set_cluster_id);
-
+#ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
         timer.startTimer(&timer.union_cluster_id); 
         post_cluster(state.params.label, state.params.cluster_id, state.window_size, 0);
+        timer.stopTimer(&timer.union_cluster_id);
+ #ifdef USE_SYNC
+        CUDA_SYNC_CHECK();
+#endif
+        timer.stopTimer(&timer.set_cluster_id);
+
+        timer.startTimer(&timer.transfer_data);
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
         CUDA_CHECK(cudaMemcpy(state.h_cluster_id, state.params.cluster_id, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
-        timer.stopTimer(&timer.union_cluster_id);
-        
+        timer.stopTimer(&timer.transfer_data);
+
         stride_num++;
         remaining_data_num  -= state.stride_size;
         state.new_stride    += state.stride_size;
@@ -2214,7 +2237,7 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     state.check = false;
-    state.check = true;
+    // state.check = true;
     initialize_params(state);
     
     // Warmup
