@@ -50,3 +50,8 @@ void merge_by_cell_id_and_idx(int* pos_arr1, int* pos_arr2, int* pos_arr3, long*
                   pos_ptr3,
                   custom_compare);
 }
+
+void thrust_sequence(int* keys, int n, int start) {
+    thrust::device_ptr<int> keys_ptr(keys);
+    thrust::sequence(keys_ptr, keys_ptr + n, start);
+}

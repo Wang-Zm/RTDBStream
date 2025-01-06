@@ -6,7 +6,7 @@
 #define DEBUG_INFO 0
 #define THREAD_NUM 40
 
-#define OPTIMIZATION_LEVEL 9 // 2 无用，early cluster 无效果
+#define OPTIMIZATION_LEVEL 0 // 2 无用，early cluster 无效果
 
 // typedef double DATA_TYPE;
 // typedef double3 DATA_TYPE_3;
@@ -150,6 +150,10 @@ extern "C" void set_hybrid_spheres_info(
 	int* num_points_in_dense_cell,
 	DATA_TYPE* min_value,
 	DATA_TYPE cell_length
+);
+void set_spheres_info_from_sparse_points(
+	int num_cells, int min_pts, int* pos_arr, DATA_TYPE_3* window, int* sparse_offset, 
+	int* offsets, DATA_TYPE_3* centers, int** points_in_dense_cells
 );
 void set_label(int** cell_points, int* nn, int min_pts, int* label, int num_points);
 void compute_cell_id(DATA_TYPE_3* points, CELL_ID_TYPE* point_cell_id, int n,

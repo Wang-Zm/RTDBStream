@@ -720,6 +720,35 @@ extern "C" void set_hybrid_spheres_info(
 	);
 }
 
+__global__ void set_spheres_info_from_sparse_points_kernel(
+	int num_cells, int min_pts, int* pos_arr, DATA_TYPE_3* window, int* sparse_offset, 
+	int* offsets, DATA_TYPE_3* centers, int** points_in_dense_cells
+) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= num_cells)
+		return;
+	const int num_points = offsets[idx + 1] - offsets[idx];
+	if (num_points < min_pts) {
+		int offset = atomicAdd(sparse_offset, num_points);
+		for (int i = offsets[idx]; i < offsets[idx + 1]; i++, offset++) {
+			centers[offset] = window[pos_arr[i]];
+			points_in_dense_cells[offset] = pos_arr + i;
+		}
+	}
+}
+
+void set_spheres_info_from_sparse_points(
+	int num_cells, int min_pts, int* pos_arr, DATA_TYPE_3* window, int* sparse_offset, 
+	int* offsets, DATA_TYPE_3* centers, int** points_in_dense_cells
+) {
+	int block = 256;
+	int grid = (num_cells + block - 1) / block;
+	set_spheres_info_from_sparse_points_kernel <<<grid, block>>>(
+		num_cells, min_pts, pos_arr, window, sparse_offset, 
+		offsets, centers, points_in_dense_cells
+	);
+}
+
 __global__ void set_label_kernel(int** cell_points, int* nn, int min_pts, int* label, int num_points) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= num_points)

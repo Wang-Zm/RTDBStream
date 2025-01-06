@@ -634,7 +634,6 @@ void rebuild_gas_from_all_points_in_window(ScanState &state) {
                 nullptr,
                 0
         ));
-    CUDA_SYNC_CHECK();
 }
 
 // update_num: 更新 AABB 的数量、重新构建 BVH tree 的点数

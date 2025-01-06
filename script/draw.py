@@ -504,7 +504,7 @@ def overall_time(colors):
         [1411, 33.2, 252, 3943],
         [7.762652, 0.881185, 8.010665, 98.083338],
         [1.713436, 1.051327, 1.392579, 4.627078],
-        [1.43628, 0.490483, 0.55197, 3.3452]
+        [0.849248, 0.449634, 0.627923, 2.3125]
     ]
     common_draw_bar_hatch(
                 total_time, record_labels, record_x_name, 
@@ -901,9 +901,9 @@ def vary_legend(colors):
 
 # draw_vary_ray_num()
 colors = ["#e6b745", "#e64b35", "xkcd:jade", "dodgerblue", "gold"]
-# overall_time(colors)
+overall_time(colors)
 # optimization_effects(colors)
-time_distribution(colors)
+# time_distribution(colors)
 # overall_memory(colors + ["gold"])
 # vary_window_size(colors)
 # vary_slide_size(colors)
