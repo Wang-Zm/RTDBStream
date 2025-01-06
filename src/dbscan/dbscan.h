@@ -3,9 +3,7 @@
 
 #include <cuda_runtime.h>
 
-#define DEBUG_INFO 0
-#define THREAD_NUM 40
-
+#define DEBUG_INFO 1
 #define OPTIMIZATION_LEVEL 0 // 2 无用，early cluster 无效果
 
 // typedef double DATA_TYPE;

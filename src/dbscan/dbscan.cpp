@@ -91,8 +91,6 @@ void initialize_params(ScanState &state) {
 #if DEBUG_INFO == 1
     CUDA_CHECK(cudaMalloc(&state.params.ray_intersections, state.window_size * sizeof(unsigned)));
     CUDA_CHECK(cudaMalloc(&state.params.ray_primitive_hits, state.window_size * sizeof(unsigned)));
-    CUDA_CHECK(cudaMemset(state.params.ray_intersections, 0, state.window_size * sizeof(unsigned)));
-    CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits, 0, state.window_size * sizeof(unsigned)));
     state.h_ray_intersections = (unsigned *) malloc(state.window_size * sizeof(unsigned));
     state.h_ray_hits = (unsigned *) malloc(state.window_size * sizeof(unsigned));
 #endif
@@ -149,12 +147,12 @@ void print_rt_info(ScanState &state) {
         total_intersections += state.h_ray_intersections[i];
         total_hits += state.h_ray_hits[i];
     }
-    long avg_intersections = total_intersections / state.window_size;
-    long avg_hits = total_hits / state.window_size;
-    printf("total_intersections: %ld\n", total_intersections);
-    printf("total_hits: %ld\n", total_hits);
-    printf("avg_intersections: %ld\n", avg_intersections);
-    printf("avg_hits: %ld\n", avg_hits);
+    // long avg_intersections = total_intersections / state.window_size;
+    // long avg_hits = total_hits / state.window_size;
+    // printf("total_intersections: %ld\n", total_intersections);
+    // printf("total_hits: %ld\n", total_hits);
+    // printf("avg_intersections: %ld\n", avg_intersections);
+    // printf("avg_hits: %ld\n", avg_hits);
     state.intersections_all_window += total_intersections;
     state.hits_all_window += total_hits;
 }
@@ -162,8 +160,8 @@ void print_rt_info(ScanState &state) {
 void print_overall_rt_info(ScanState &state, int num_slides) {
     long avg_intersections = state.intersections_all_window / num_slides;
     long avg_hits = state.hits_all_window / num_slides;
-    double avg_intersections_per_ray = 1.0 * state.intersections_all_window / num_slides / state.window_size;
-    double avg_hits_per_ray = 1.0 * state.hits_all_window / num_slides / state.window_size;
+    double avg_intersections_per_ray = 1.0 * state.intersections_all_window / num_slides / state.num_rays_in_window;
+    double avg_hits_per_ray = 1.0 * state.hits_all_window / num_slides / state.num_rays_in_window;
     printf("avg intersections for each window: %ld\n", avg_intersections);
     printf("avg hits for each window: %ld\n", avg_hits);
     printf("avg intersections for each window per ray: %lf\n", avg_intersections_per_ray);
@@ -1008,24 +1006,24 @@ void search_naive(ScanState &state, bool timing) {
     // * Initialize the first window
     CUDA_CHECK(cudaMemcpy(state.params.window, state.h_data, state.window_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
     make_gas(state);
-    printf("[Step] Initialize the first window - build BVH tree...\n");
     CUDA_CHECK(cudaMemset(state.params.nn, 0, state.window_size * sizeof(int)));
     find_neighbors(state.params.nn, state.params.window, state.window_size, state.params.radius2, state.min_pts);
     CUDA_SYNC_CHECK();
-    printf("[Step] Initialize the first window - get NN...\n");
 
     // * Start sliding
-    CUDA_CHECK(cudaMallocHost(&state.h_window, state.window_size * sizeof(DATA_TYPE_3)));
-    memcpy(state.h_window, state.h_data, state.window_size * sizeof(DATA_TYPE_3));
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
     unsigned long cluster_ray_intersections = 0;
     CUDA_CHECK(cudaMemset(state.params.cluster_ray_intersections, 0, sizeof(unsigned)));
     while (remaining_data_num >= state.stride_size) {
+#if DEBUG_INFO == 1
+        CUDA_CHECK(cudaMemset(state.params.ray_intersections, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits, 0, state.window_size * sizeof(int)));
+#endif
+
         timer.startTimer(&timer.total);
 
         state.params.out = state.params.window + update_pos * state.stride_size;
-        memcpy(state.h_window + update_pos * state.stride_size, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3));
         // out stride
         timer.startTimer(&timer.out_stride_ray);
         state.params.operation = 0; // nn--
@@ -2148,6 +2146,11 @@ void search(ScanState &state, bool timing) {
     printf("[Info] Total stride num: %d\n", remaining_data_num / state.stride_size);
     if (!timing) printf("[Info] checking\n");
     while (remaining_data_num >= state.stride_size) {
+#if DEBUG_INFO == 1
+        CUDA_CHECK(cudaMemset(state.params.ray_intersections, 0, state.window_size * sizeof(int)));
+        CUDA_CHECK(cudaMemset(state.params.ray_primitive_hits, 0, state.window_size * sizeof(int)));
+#endif
+
         timer.startTimer(&timer.total);
         timer.startTimer(&timer.pre_process);
         
@@ -2334,11 +2337,11 @@ int main(int argc, char *argv[]) {
     make_pipeline(state);               // Link pipeline
     make_sbt(state);
     state.check = false;
-    state.check = true;
+    // state.check = true;
     initialize_params(state);
     
     // Warmup
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < 0; i++) {
 #if OPTIMIZATION_LEVEL == 9
         search(state, !state.check);
         // search_grid_cores_hybrid_bvh_op(state, !state.check);
@@ -2376,6 +2379,7 @@ int main(int argc, char *argv[]) {
 #if OPTIMIZATION_LEVEL == 9
     search(state, true);
     // search_grid_cores_hybrid_bvh_op(state, !state.check);
+    state.num_rays_in_window = state.window_size;
 #elif OPTIMIZATION_LEVEL == 8
     search_grid_cores_hybrid_bvh(state, true);
 #elif OPTIMIZATION_LEVEL == 7
@@ -2394,6 +2398,7 @@ int main(int argc, char *argv[]) {
     search_identify_cores(state, true);
 #elif OPTIMIZATION_LEVEL == 0
     search_naive(state, true);
+    state.num_rays_in_window = state.stride_size * 2;
 #elif OPTIMIZATION_LEVEL == 100
     search_cuda(state);
 #endif

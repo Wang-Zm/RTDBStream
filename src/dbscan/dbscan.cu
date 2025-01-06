@@ -160,9 +160,6 @@ extern "C" __global__ void __raygen__grid() {
     // Map our launch idx to a screen location and create a ray from the camera
     // location through the screen 
     float3 ray_origin, ray_direction;
-    // ray_origin    = { float(params.window[pos].x), 
-    //                   float(params.window[pos].y),
-    //                   float(params.window[pos].z) };
     ray_origin    = { float(params.window[idx.x].x), 
                       float(params.window[idx.x].y),
                       float(params.window[idx.x].z) };
@@ -171,7 +168,6 @@ extern "C" __global__ void __raygen__grid() {
     // Trace the ray against our scene hierarchy
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
-    // unsigned int ray_id  = pos;
     unsigned int ray_id  = idx.x;
     unsigned int op      = 0; // 占空
     optixTrace(
@@ -328,16 +324,16 @@ extern "C" __global__ void __intersection__cluster() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
     if (params.label[primIdx] == 0 && primIdx > ray_id) return; // 是 core 且 id 靠后，则直接退出 => 减少距离计算次数
-    
+#if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
-
+#endif
     // 先判别是否已经属于同一个 cluster，prune，减少距离计算
     int ray_rep = find_repres(ray_id, params.cluster_id);
     int prim_rep = find_repres(primIdx, params.cluster_id);
     if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
-
+#if DEBUG_INFO == 1
     optixSetPayload_1(optixGetPayload_1() + 1);
-
+#endif
     const DATA_TYPE_3 ray_orig = params.window[ray_id];
     const DATA_TYPE_3 point    = params.window[primIdx];
     DATA_TYPE_3 O = { ray_orig.x - point.x, ray_orig.y - point.y, ray_orig.z - point.z };
@@ -358,21 +354,11 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
 
-    // TODO：考虑设置 sparse point 的光线不遇到大球：1.设置 ray_id 是否是 sparse 放到 Payload 中，如果是 sparse ray 直接跳过
-    // TODO：dense cell 也可以避免计算，比如遇到了 cell_id 更大的球，可以直接规避，不计算距离
-
-    // int prim_idx_in_window = params.center_idx_in_window[primIdx];
     int prim_idx_in_window = *params.cell_points[primIdx];
     if (find_repres(ray_id, params.cluster_id) == find_repres(prim_idx_in_window, params.cluster_id)) 
         return;
 
-    // 判断是 prim 是 cell-sphere 还是 point-sphere. This can be done by num_points, and then radii won't be stored.
-    // if (params.cell_point_num[primIdx] < params.min_pts) { // Eps-radius sphere
-    // 改变判别条件，primIdx 是否 < num_points_in_sparse_cells
     if (primIdx < params.sparse_num) {
-        // if (prim_idx_in_window > ray_id) { // * Avoid calculating repeatedly
-        //     return;
-        // }
         DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
         if (sqdist >= params.radius2) return;
         if (params.label[prim_idx_in_window] == 0) {
@@ -384,13 +370,6 @@ extern "C" __global__ void __intersection__hybrid_radius_sphere() {
             }
         }
     } else { // 1.5Eps-radius sphere
-        // if (optixGetPayload_3() == 1) {
-        //     return;
-        // }
-
-        // 如果 ray 的 cell_id 更靠前，那么直接跳过，不再计算
-        // if (params.point_cell_id[prim_idx_in_window] > optixGetPayload_3()) return;
-        
         int *points_in_cell = params.cell_points[primIdx];
         int num_points = params.cell_point_num[primIdx];
         for (int i = 0; i < num_points; i++) {
