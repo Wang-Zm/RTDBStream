@@ -169,6 +169,7 @@ void print_rt_info(ScanState &state) {
     state.hits_all_window_cluster += total_hits;
     
     state.num_spheres_all_window += state.params.center_num;
+    state.num_points_in_dense_cells += state.params.dense_num;
     
     unsigned num_dist_calculations;
     CUDA_CHECK(cudaMemcpy(&num_dist_calculations, state.params.num_dist_calculations, sizeof(unsigned), cudaMemcpyDeviceToHost));
@@ -198,6 +199,9 @@ void print_overall_rt_info(ScanState &state, int num_strides) {
     
     double avg_num_spheres = 1.0 * state.num_spheres_all_window / num_strides;
     printf("avg num spheres for each window: %lf\n", avg_num_spheres);
+    
+    double avg_num_points_in_dense_cells = 1.0 * state.num_points_in_dense_cells / num_strides;
+    printf("avg num points in dense cells for each window: %lf\n", avg_num_points_in_dense_cells);
 
     double avg_num_dist_calculations = 1.0 * state.num_dist_calculations_all_window / num_strides;
     printf("avg num dist calculations for each window: %lf\n", avg_num_dist_calculations);
@@ -547,7 +551,6 @@ void set_hybrid_aabb(ScanState &state) {
 void set_hybrid_aabb_gpu(ScanState &state) {
     // 1.计算 offsets
     timer.startTimer(&timer.compute_offsets);
-    // CUDA_CHECK(cudaMemcpy(state.params.pos_arr, state.pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(state.params.num_offsets, 0, sizeof(int)));
     compute_offsets_of_cells(state.window_size, state.params.pos_arr, state.params.point_cell_id, state.params.offsets, state.params.num_offsets);
     int num_offsets;
@@ -2371,14 +2374,18 @@ int main(int argc, char *argv[]) {
     parse_args(state, argc, argv);
     if (state.data_file.find("tao") != string::npos) {
         read_data_from_tao(state.data_file, state);
+        state.check = true;
     } else if (state.data_file.find("geolife") != string::npos) {
         read_data_from_geolife(state.data_file, state);
+        state.check = false;
     } else if (state.data_file.find("RBF") != string::npos) {
         read_data_from_rbf(state.data_file, state);
+        state.check = true;
     } else if (state.data_file.find("EDS") != string::npos) {
         read_data_from_eds(state.data_file, state);
     } else if (state.data_file.find("stock") != string::npos) {
         read_data_from_stk(state.data_file, state);
+        state.check = true;
     } else {
         printf("[Error] Dataset %s does not exist!\n", state.data_file.c_str());
     }
@@ -2386,10 +2393,8 @@ int main(int argc, char *argv[]) {
     initialize_optix(state);
     make_module(state);
     make_program_groups(state);
-    make_pipeline(state);               // Link pipeline
+    make_pipeline(state);
     make_sbt(state);
-    state.check = false;
-    // state.check = true;
     initialize_params(state);
     
     // Warmup
@@ -2430,6 +2435,7 @@ int main(int argc, char *argv[]) {
     state.intersections_all_window_cluster = 0;
     state.hits_all_window_cluster = 0;
     state.num_spheres_all_window = 0;
+    state.num_points_in_dense_cells = 0;
     state.num_dist_calculations_all_window = 0;
     // Timing
 #if OPTIMIZATION_LEVEL == 9

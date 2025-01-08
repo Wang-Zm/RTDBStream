@@ -101,85 +101,30 @@ def common_draw(Ys: list, labels: list, y_tick_tuple: tuple, x_lim_tuple: tuple,
         plt.tight_layout()
         pdf.savefig()
 
-def common_draw_hatch(Ys: list, labels: list, y_tick_tuple: tuple, x_lim_tuple: tuple, x_name: list = None,
-                saveName: str = "pic/paper/temp.pdf",
-                colors=[],
-                colorOffset=0,
-                legendsize=20,
-                legend_pos=2,
-                x_axis_name="",
-                y_axis_name='Time (ms)',
-                y_log=False,
-                ymin=-1,
-                ymax=-1,
-                lengent_ncol=3,
-                selfdef_figsize=(12, 6),
-                BAR=True,
-                bar_width=0.8,
-                rBAR=False,
-                uptext=False,
-                columnspacing=1.6,
-                rYs=[],
-                ry_axis_name='',
-                r_labels=[],
-                r_ymax=-1,
-                common_font_size=26,
-                x_num=0,
-                line=0,
-                y_ticks=[],
-                y_label_fontsize=''):
+def draw_line_chart(Ys: list, labels: list, x_name: list,
+                    saveName="pic/paper/temp.pdf", colors=[],
+                    legend_size=20, legend_pos=2,
+                    x_axis_name="", y_axis_name="Time (ms)",
+                    y_log=False, ymin=-1, ymax=-1,
+                    lengent_ncol=3, selfdef_figsize=(12, 6),
+                    columnspacing=1.6, common_font_size=26,
+                    y_ticks=[], y_label_fontsize="", show_legend=True):
     with PdfPages(saveName) as pdf:
-        font = {
-            "weight": "normal",
-            "size": common_font_size,
-        }
-        if x_num == 0:
-            x_num = len(x_name)
+        font = {"weight": "normal", "size": common_font_size}
+        x_num = len(x_name)
         X = np.arange(x_num) + 1
         markers = ["o", "^", "D", "s", "*", "P", "x"]
-        linestyles = ["-", ":", "-.", "--"]
-        markerfacecolors = ["black", "none"]
+        linestyles = [(0, (3, 5, 1, 5, 1, 5)), ":", "-.", "--", "solid"]
         plt.figure(figsize=selfdef_figsize)
-        if not BAR:
-            for i in range(0, len(Ys)):
-                plt.plot(X,
-                         Ys[i],
-                         label=labels[i],
-                         linestyle=linestyles[i % 4],
-                         color=colors[i],
-                         marker=markers[i],
-                         markersize=10,
-                         linewidth=3,
-                         )
-        else:
-            hatches = ['//','--||','\\\\','--','o', 'x',  '+', '*', 'O', ]
-            X = np.arange(x_num) + 1
-            total_width, n = bar_width, len(Ys)
-            width = total_width / n
-            X = X - (total_width - width) / 2
-            for i in range(0, len(Ys)):
-                plt.bar(X + width * i, Ys[i], width=width, label=labels[i],
-                        color=colors[i % len(colors) + colorOffset],
-                        edgecolor="black")
-
-        xlim_left, xlim_right = x_lim_tuple
-        if line != 0:
-            line_x = np.linspace(xlim_left, xlim_right, 4)
-            line_y = [line, line, line, line]
-            plt.plot(line_x, line_y, color="darkgreen",
-                     label="RTc3 Uniform",  linestyle='--')
+        for i in range(0, len(Ys)):
+            plt.plot(X, Ys[i], label=labels[i], linestyle=linestyles[i], color=colors[i], marker=markers[i],
+                     markersize=10, linewidth=3)
         if y_log:
             plt.yscale("log")
         x_ticks = np.linspace(1, x_num, len(x_name))
         if x_name == None:
             x_name = [str(float(x)/10) for x in range(0, x_num)]
         plt.xticks(x_ticks, x_name, fontsize=common_font_size)
-
-        # specify y_ticks
-        # y_ticks = np.linspace(0,500,20)
-        # y_len, y_num = y_tick_tuple
-        # y_ticks = np.linspace(0, y_len, y_num)
-        # plt.yticks(y_ticks, fontsize=common_font_size)
 
         # adaptively
         plt.yticks(fontsize=common_font_size)
@@ -190,65 +135,38 @@ def common_draw_hatch(Ys: list, labels: list, y_tick_tuple: tuple, x_lim_tuple: 
         if ymin != -1:
             plt.ylim(ymin=ymin)
 
-        if uptext:
-            # * batch range query
-            for j in range(2, len(X)):
-                plt.text(X[j] + width * 1, Ys[1][j] + 10, 'N/A',
-                         ha='center', va='bottom', rotation=90)
-
         ax = plt.gca()
-
         if x_axis_name != "":
             ax.set_xlabel(x_axis_name, font)
-        if y_label_fontsize == '':
+        if y_label_fontsize == "":
             ax.set_ylabel(y_axis_name, font)
         else:
             ax.set_ylabel(
                 y_axis_name, {"weight": "normal", "size": y_label_fontsize})
-        ax.legend(prop={'size': legendsize}, loc=legend_pos,
-                  ncol=lengent_ncol, columnspacing=columnspacing)
-
-        if rYs != []:
-            ax2 = plt.twinx()
-            for i in range(0, len(rYs)):
-                ax2.plot(X[1:],
-                         rYs[i],
-                         label=r_labels[i],
-                         linestyle=linestyles[(i+2) % 4],
-                         color=colors[i+2],
-                         marker=markers[i+2],
-                         markersize=10,
-                         linewidth=3,
-                         )
-            if y_log:
-                ax2.set_yscale("log")
-            if r_ymax != -1:
-                ax2.set_ylim(ymax=r_ymax)
-            ax2.tick_params(axis='y', labelsize=common_font_size)
-            ax2.set_ylabel(ry_axis_name, font)
-            ax2.legend(prop={'size': legendsize}, loc='upper right',
-                       ncol=lengent_ncol, columnspacing=columnspacing)
+        if show_legend:
+            ax.legend(prop={'size': legend_size}, loc="upper left", bbox_to_anchor=(0, 1.25),
+                      ncol=lengent_ncol, columnspacing=columnspacing)
         plt.tight_layout()
         pdf.savefig()
 
-def common_draw_bar_hatch(Ys, labels, x_name,
-                          save_name,
-                          colors=[],
-                          legend_size=20,
-                          legend_pos=2,
-                          x_axis_name="",
-                          y_axis_name='Time (ms)',
-                          y_log=False,
-                          ymin=-1,
-                          ymax=-1,
-                          lengent_ncol=3,
-                          selfdef_figsize=(12, 6),
-                          bar_width=0.8,
-                          columnspacing=1.6,
-                          common_font_size=26,
-                          x_num=0,
-                          y_ticks=[],
-                          y_label_fontsize=''):
+def draw_bar_hatch(Ys, labels, x_name,
+                   save_name,
+                   colors=[],
+                   legend_size=20,
+                   legend_pos=2,
+                   x_axis_name="",
+                   y_axis_name='Time (ms)',
+                   y_log=False,
+                   ymin=-1,
+                   ymax=-1,
+                   lengent_ncol=3,
+                   selfdef_figsize=(12, 6),
+                   bar_width=0.8,
+                   columnspacing=1.6,
+                   common_font_size=26,
+                   x_num=0,
+                   y_ticks=[],
+                   y_label_fontsize=''):
     with PdfPages(save_name) as pdf:
         font = {
             "weight": "normal",
@@ -497,7 +415,7 @@ def time_distribution(colors):
                   )
 
 def overall_time(colors):
-    record_x_name = ["STK", "RBF", "TAO", "Geolife"]
+    record_x_name = ["STK", "RBF", "TAO", "GeoLife"]
     record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
         [940, 48.3, 266, 5020],
@@ -506,7 +424,7 @@ def overall_time(colors):
         [1.713436, 1.051327, 1.392579, 4.627078],
         [0.849248, 0.449634, 0.627923, 2.3125]
     ]
-    common_draw_bar_hatch(
+    draw_bar_hatch(
                 total_time, record_labels, record_x_name, 
                 "pic/baseline-time.pdf",
                 colors=colors,
@@ -522,14 +440,14 @@ def overall_time(colors):
                 ymax=6e6)
 
 def optimization_effects(colors):
-    record_x_name = ["STK", "RBF", "TAO", "Geolife"]
+    record_x_name = ["STK", "RBF", "TAO", "GeoLife"]
     record_labels = ["Naive", "ICG", "ICG+CMRS"]
     total_time = [
         [16.6926, 1.08912, 7.19273, 83.7277],
-        [11.3769, 0.891431, 3.48714, 54.7018],
-        [1.43628, 0.490483, 0.55197, 3.3452],
+        [10.641, 0.896635, 3.46354, 47.7756],
+        [0.849248, 0.449634, 0.627923, 2.3125],
     ]
-    common_draw_bar_hatch(
+    draw_bar_hatch(
                 total_time, record_labels, record_x_name, 
                 "pic/optimization-effects.pdf",
                 colors=colors,
@@ -569,344 +487,432 @@ def overall_memory(colors):
                 ymax=150)
 
 def vary_window_size(colors):
-    # GAU
-    record_x_name = ["10k", "50k", "100k", "150k", "200k"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    # STK
+    record_x_name = ["50k", "100k", "200k", "400k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [1819.827, 561.654, 183.512, 173.451, 153.178],
-        [13.54, 5.98, 6.55, 5.07, 5.22],
-        [84.01, 145.61, 163.55, 148.02, 186.75],
-        [0.597036, 0.530574, 0.525301, 0.506659, 0.489369],
+        [334.26, 1385.01, 6264.21, 27488.2],
+        [364.3809, 1358.243, 5235.04, 18545.031],
+        [2.69084, 5.96088, 14.0751, 37.353],
+        [1.05264, 1.62565, 2.29535, 3.81047],
+        [0.554731, 0.82438, 1.31843, 2.39203],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-window-GAU.pdf",
+    draw_line_chart(
+                total_time, record_labels, record_x_name, 
+                "pic/varying-window-STK.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Window Size',
+                x_axis_name='|Window|',
                 y_axis_name='Time (ms)',
                 y_log=True,
                 common_font_size=26,
                 columnspacing=0.8,
                 show_legend=False,
-                legendsize=26,
+                legend_size=26,
                 lengent_ncol=2,
                 legend_pos='upper right',
-                ymax=3000,
-                BAR=False)
+                # ymax=3000
+                )
 
-    # STK
-    record_x_name = ["10k", "50k", "100k", "150k", "200k"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    # RBF
+    record_x_name = ["2.5k", "5k", "10k", "20k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [50.727, 34.567, 35.035, 38.082, 40.09],
-        [2.016, 1.672, 1.76, 2, 1.87],
-        [1.78, 4.39, 11.82, 16.76, 21.85],
-        [0.360827, 0.377785, 0.39899, 0.418776, 0.426521],
+        [7.75, 13.907, 33.5666, 88.6],
+        [6.269, 11.657, 20.683, 49.65],
+        [0.566347, 0.681071, 0.817033, 1.001],
+        [0.803943, 0.843329, 0.858283, 0.8719],
+        [0.392743, 0.412964, 0.461149, 0.481494],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-window-STK.pdf",
+    draw_line_chart(
+                total_time, record_labels, 
+                record_x_name, "pic/varying-window-RBF.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Window Size',
+                x_axis_name='|Window|',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                legendsize=26,
+                legend_size=26,
                 common_font_size=26,
                 columnspacing=0.8,
                 show_legend=False,
                 lengent_ncol=4,
                 legend_pos='best',
-                ymax=200,
-                BAR=False)
+                # ymax=200
+                )
 
     # TAO
-    record_x_name = ["1k", "5k", "10k", "15k", "20k"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = ["5k", "10k", "20k", "40k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [2.778, 4.284, 5.52, 6.152, 7.25],
-        [0.38, 0.644, 0.965, 1.26, 1.616],
-        [0.49, 1.74, 3.71, 6.56, 9.35],
-        [0.307149, 0.348122, 0.393131, 0.431411, 0.457859],
+        [69.025, 267.356, 864.996, 3025.85],
+        [77.174, 247.722, 732.583, 2240.3146],
+        [4.40209, 8.031, 14.0151, 25.1903],
+        [2.24161, 1.401, 1.99919, 3.1056],
+        [0.466426, 0.621629, 0.893692, 1.16426],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
+    draw_line_chart(
+                total_time, record_labels,
                 record_x_name, "pic/varying-window-TAO.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Window Size',
+                x_axis_name='|Window|',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                legendsize=26,
+                legend_size=26,
                 common_font_size=26,
                 columnspacing=0.8,
                 show_legend=False,
                 lengent_ncol=1,
-                ymax=12,
-                BAR=False)
+                # ymax=12
+                )
+    
+    # GeoLife
+    record_x_name = ["50k", "100k", "200k", "400k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
+    total_time = [
+        [1246.9, 6139.44, 27455.91, 122421.99],
+        [1160.2, 4211.04, 15921.885, 76964],
+        [21.4767, 45.0083, 98.133, 255.342],
+        [2.10685, 3.19589, 4.65865, 7.88127],
+        [1.07431, 1.52713, 2.28313, 3.83796],
+    ]
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-window-GeoLife.pdf",
+                colors=colors,
+                selfdef_figsize=(8, 6),
+                x_axis_name='|Window|',
+                y_axis_name='Time (ms)',
+                y_log=True,
+                legend_size=26,
+                common_font_size=26,
+                columnspacing=0.8,
+                show_legend=False,
+                lengent_ncol=1,
+                # ymax=12
+                )
 
 def vary_slide_size(colors):
-    # GAU
-    record_x_name = ["5%", "10%", "20%", "50%", "100%"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
-    total_time = [
-        [192.152, 382.027, 769.952, 3159.927, 18983.633],
-        [5.688, 7.34, 11, 26.3, 49.66],
-        [163.08, 94.22, 49.17, 40.18, 65.38],
-        [0.5494, 0.65214, 0.848003, 1.48439, 2.60254],
-    ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-slide-GAU.pdf",
-                colors=colors,
-                colorOffset=0,
-                selfdef_figsize=(8, 6),
-                x_axis_name='Slide Size/Window Size',
-                y_axis_name='Time (ms)',
-                y_log=True,
-                show_legend=False,
-                legendsize=26,
-                common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=25000,
-                BAR=False)
-
     # STK
-    record_x_name = ["5%", "10%", "20%", "50%", "100%"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = ["1k", "5k", "10k", "25k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [36.83, 71.909, 140.313, 325.305, 784.613],
-        [1.96, 3.446, 6.4, 16.2, 33.8],
-        [9.55, 9.27, 6.36, 12.14, 22.32],
-        [0.401412, 0.513108, 0.722111, 1.363, 2.45399],
+        [372.9409, 1690.053, 2984.202, 8541.027],
+        [515.7911, 1745.899, 2720.9148, 6465.757],
+        [5.98044, 5.92332, 6.01017, 5.96732],
+        [1.59395, 1.60001, 1.61424, 1.64389],
+        [0.755292, 0.82444, 0.868426, 0.974887],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-slide-STK.pdf",
+    draw_line_chart(
+                total_time, record_labels, record_x_name, 
+                "pic/varying-stride-STK.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Slide Size/Window Size',
+                x_axis_name='|Stride| / |Window|',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=1500,
-                BAR=False)
+                show_legend=False,
+                )
+
+    # RBF
+    record_x_name = ["0.1k", "0.5k", "1k", "2.5k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
+    total_time = [
+        [11.32, 46.267, 84.167, 237.167],
+        [8.19333, 21.98333, 67.7333, 117.41666],
+        [0.817853, 0.8168, 0.9819, 0.948417],
+        [0.872673, 1.16488, 1.1764, 1.01625],
+        [0.434283, 0.442253, 0.447933, 0.454834],
+    ]
+    draw_line_chart(
+                total_time, record_labels, 
+                record_x_name, "pic/varying-stride-RBF.pdf",
+                colors=colors,
+                selfdef_figsize=(8, 6),
+                x_axis_name='|Stride| / |Window|',
+                y_axis_name='Time (ms)',
+                y_log=True,
+                common_font_size=26,
+                show_legend=False,
+                )
 
     # TAO
-    record_x_name = ["5%", "10%", "20%", "50%", "100%"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = ["0.1k", "0.5k", "1k", "2.5k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [5.435, 10.437, 20.574, 47.513, 73.639],
-        [0.96, 1.265, 1.93, 3.4, 5.7],
-        [3.89, 3.33, 3.92, 4.38, 8.59],
-        [0.396153, 0.405813, 0.437548, 0.513555, 0.628039],
+        [59.4784, 269.5769, 545.28, 1443.37],
+        [67.9731, 270.529, 524.908, 1171.2389],
+        [8.03219, 8.0389, 7.97935, 8.11054],
+        [1.39837, 1.4036, 1.398, 1.38784],
+        [0.622362, 0.62325, 0.625237, 0.635083],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-slide-TAO.pdf",
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-stride-TAO.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Slide Size/Window Size',
+                x_axis_name='|Stride| / |Window|',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=100,
-                BAR=False)
-
-def vary_R(colors):
-    # GAU
-    record_x_name = ["25%", "50%", "100%", "500%", "1000%"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+                show_legend=False,
+                )
+    
+    # GeoLife
+    record_x_name = ["2k", "10k", "20k", "50k"]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [7830.446, 1732.433, 192.201, 45.41, 24.546],
-        [115.3, 17.7, 5.72, 1.65, 1.46],
-        [5859.5, 990.92, 160.03, 8.41, 1.8],
-        [1.05287, 0.621829, 0.499456, 0.325994, 0.286911],
+        [4079.491, 21431.15, 49539.46, 137434.7789],
+        [3823.926, 20248.875, 38021.5109, 91006.5294],
+        [97.5971, 97.964, 97.9732, 98.4212],
+        [4.63031, 4.63569, 4.64033, 4.65877],
+        [2.18612, 2.28853, 2.29613, 2.51697],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-R-GAU.pdf",
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-stride-GeoLife.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Distance Threshold',
+                x_axis_name='|Stride| / |Window|',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=10000,
-                BAR=False)
+                show_legend=False,
+                )
 
+def vary_eps(colors):
     # STK
-    record_x_name = ["25%", "50%", "100%", "500%", "1000%"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = [0.055, 0.065, 0.075, 0.085, 0.095]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [228.298, 77.092, 35.961, 16.423, 18.58],
-        [4.77, 2.48, 1.96, 1.32, 1.25],
-        [95.06, 31.16, 9.51, 1.45, 1.11],
-        [0.500329, 0.45761, 0.39688, 0.320794, 0.295767],
+        [1195.91, 1346.77, 1519.18, 1750.52, 1870.042],
+        [1146.619, 1339.79, 1547.899, 1790.037, 2043.915],
+        [5.20666, 5.64935, 6.10378, 6.63931, 6.97539],
+        [1.5063, 1.58251, 1.68328, 1.74032, 1.71261],
+        [0.804921, 0.815514, 0.833546, 0.860947, 0.851131],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-R-STK.pdf",
+    draw_line_chart(
+                total_time, record_labels, record_x_name, 
+                "pic/varying-eps-STK.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Distance Threshold',
+                x_axis_name='Distance threshold ($Eps$)',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=600,
-                BAR=False)
+                show_legend=False,
+                )
+
+    # RBF
+    record_x_name = [0.015, 0.025, 0.035, 0.045, 0.055]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
+    total_time = [
+        [25.8167, 23.133, 37.6, 38.75, 51.75],
+        [13.7, 21.983, 29.967, 27.633, 34.9],
+        [0.509383, 0.645233, 0.80475, 1.02282, 1.2284],
+        [0.904483, 0.874467, 0.85675, 0.86805, 0.887],
+        [0.476082, 0.458895, 0.440983, 0.445768, 0.494466],
+    ]
+    draw_line_chart(
+                total_time, record_labels, 
+                record_x_name, "pic/varying-eps-RBF.pdf",
+                colors=colors,
+                selfdef_figsize=(8, 6),
+                x_axis_name='Distance threshold ($Eps$)',
+                y_axis_name='Time (ms)',
+                y_log=True,
+                common_font_size=26,
+                show_legend=False,
+                )
 
     # TAO
-    record_x_name = ["25%", "50%", "100%", "500%", "1000%"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = [1.15, 1.25, 1.35, 1.45, 1.55]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [48.713, 12.654, 5.481, 1.778, 1.519],
-        [21, 4, 0.98, 0.204, 0.129],
-        [116.2, 16.76, 3.78, 0.72, 0.21],
-        [0.777763, 0.56287, 0.394725, 0.2158, 0.182455],
+        [258.9, 271.512, 280.35, 292.005, 309.92],
+        [239.34, 248.8876, 280.423, 303.41, 322.09],
+        [7.04825, 7.71373, 8.23476, 8.92675, 9.55517],
+        [1.41774, 1.38415, 1.32734, 1.34561, 1.44231],
+        [0.655035, 0.641256, 0.650129, 0.627236, 0.645862],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-R-TAO.pdf",
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-eps-TAO.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Distance Threshold',
+                x_axis_name='Distance threshold ($Eps$)',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=150,
-                BAR=False)
-
-def vary_K(colors):
-    # GAU
-    record_x_name = ["10", "30", "50", "70", "100"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+                show_legend=False,
+                )
+    
+    # GeoLife
+    record_x_name = [0.005, 0.015, 0.025, 0.035, 0.045]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [111.468, 132.837, 183.588, 567.227, 3776.095],
-        [3.25, 4.08, 5.11, 7.05, 9.03],
-        [17.66, 56.55, 165.67, 325.47, 538.45],
-        [0.301978, 0.407293, 0.547744, 0.614817, 0.79909],
+        [13160.45, 32277.4, 63390, 97859, 120400],
+        [8485.87, 28915.27, 56084.81, 80090.34, 105149.2],
+        [60.7002, 138.463, 232.131, 300.701, 353.146],
+        [3.83563, 5.29879, 6.35041, 6.70076, 7.60078],
+        [1.95702, 3.16758, 4.10279, 4.38947, 5.68359],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-K-GAU.pdf",
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-eps-GeoLife.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Neighbor Threshold',
+                x_axis_name='Distance threshold ($Eps$)',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=6000,
-                BAR=False)
+                show_legend=False)
 
+def vary_min_pts(colors):
     # STK
-    record_x_name = ["10", "30", "50", "70", "100"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = [2, 4, 6, 8, 10, 12, 14]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [32.609, 28.773, 35.838, 70.633, 110.031],
-        [1.467, 1.56, 1.94, 2.23, 2.38],
-        [3.22, 8.83, 10.03, 12.48, 20.86],
-        [0.288736, 0.35102, 0.399524, 0.450588, 0.543054],
+        [1690.053, 1016.83, 979.85, 987.3, 969.3, 983, 991.2],
+        [1745.899, 1335.619, 1315.05, 1324.7, 1326.46, 1334.6, 1318.31],
+        [5.96724, 7.7207, 7.72984, 7.78175, 7.73749, 7.78556, 7.7608],
+        [1.60426, 1.72324, 1.72556, 1.73936, 1.73732, 1.73156, 1.75957],
+        [0.827799, 0.812525, 0.824028, 0.841418, 0.846191, 0.850138, 0.868429],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-K-STK.pdf",
+    draw_line_chart(
+                total_time, record_labels, record_x_name, 
+                "pic/varying-minpts-STK.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Neighbor Threshold',
+                x_axis_name='Density threshold ($MinPts$)',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=300,
-                BAR=False)
+                show_legend=False,
+                )
+
+    # RBF
+    record_x_name = [2, 4, 6, 8, 10, 12, 14]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
+    total_time = [
+        [27.55, 46.267, 32, 28.5, 26.12, 24.08, 23.28],
+        [24.33, 21.98333, 23.08, 17.67, 20.183, 23.483, 17.3333],
+        [0.6585, 0.816417, 0.821617, 0.833967, 0.839917, 0.831467, 0.843667],
+        [0.6893, 0.856033, 0.889883, 0.9242, 0.991083, 1.03213, 1.08822],
+        [0.432817, 0.440833, 0.471619, 0.501432, 0.541671, 0.581148, 0.620549],
+    ]
+    draw_line_chart(
+                total_time, record_labels, 
+                record_x_name, "pic/varying-minpts-RBF.pdf",
+                colors=colors,
+                selfdef_figsize=(8, 6),
+                x_axis_name='Density threshold ($MinPts$)',
+                y_axis_name='Time (ms)',
+                y_log=True,
+                common_font_size=26,
+                show_legend=False,
+                )
 
     # TAO
-    record_x_name = ["10", "30", "50", "70", "100"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    record_x_name = [2, 4, 6, 8, 10, 12, 14]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [2.892, 3.876, 5.598, 7.291, 10.428],
-        [0.64, 0.855, 0.99, 1.13, 1.4],
-        [1.32, 2.48, 3.65, 4.81, 6.65],
-        [0.224274, 0.317165, 0.395041, 0.471331, 0.587537],
+        [239.4, 266.36, 269.5769, 257.8, 258.9, 260.2, 257.46],
+        [247.653, 254.248, 270.529, 253.4, 254.17, 249.3, 250.574],
+        [7.17507, 7.96892, 7.91603, 8.00291, 7.98473, 8.00285, 8.044],
+        [0.999503, 1.34341, 1.39976, 1.44053, 1.47366, 1.50226, 1.52249],
+        [0.61176, 0.612657, 0.621792, 0.638873, 0.65647, 0.66728, 0.678002],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
-                record_x_name, "pic/varying-K-TAO.pdf",
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-minpts-TAO.pdf",
                 colors=colors,
-                colorOffset=0,
                 selfdef_figsize=(8, 6),
-                x_axis_name='Neighbor Threshold',
+                x_axis_name='Density threshold ($MinPts$)',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=False,
-                legendsize=26,
                 common_font_size=26,
-                columnspacing=0.8,
-                lengent_ncol=1,
-                ymax=16,
-                BAR=False)
+                show_legend=False,
+                )
+    
+    # GeoLife
+    record_x_name = [2, 4, 6, 8, 10, 12, 14]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
+    total_time = [
+        [22860, 25100, 21431.15, 24700, 28000, 24300, 25000],
+        [16140, 20677, 20248.875, 15500, 20100, 19700, 18000],
+        [80.9037, 97.9878, 97.7101, 97.9957, 97.7859, 97.7097, 98.1707],
+        [3.60414, 4.44956, 4.65029, 4.79877, 4.99536, 5.09299, 5.20652],
+        [2.33793, 2.28715, 2.28557, 2.28067, 2.2964, 2.32065, 2.3361],
+    ]
+    draw_line_chart(
+                total_time, record_labels,
+                record_x_name, "pic/varying-minpts-GeoLife.pdf",
+                colors=colors,
+                selfdef_figsize=(8, 6),
+                x_axis_name='Density threshold ($MinPts$)',
+                y_axis_name='Time (ms)',
+                y_log=True,
+                common_font_size=26,
+                show_legend=False)
 
 def vary_legend(colors):
-    record_x_name = ["10", "30", "50", "70", "100"]
-    record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    # record_x_name = ["10", "30", "50", "70", "100"]
+    # record_labels = ["MCOD", "NETS", "MDUAL", "RTOD"]
+    # total_time = [
+    #     [117.1270265, 133.5844736, 195.2347218, 592.9089938, 3497.38145],
+    #     [3.25, 4.08, 5.11, 7.05, 9.03],
+    #     [17.66, 56.55, 165.67, 325.47, 538.45],
+    #     [0.301978, 0.407293, 0.547744, 0.614817, 0.79909],
+    # ]
+    # common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
+    #             record_x_name, "pic/varying-params-legend.pdf",
+    #             colors=colors,
+    #             colorOffset=0,
+    #             selfdef_figsize=(12, 6),
+    #             x_axis_name='Neighbor Threshold',
+    #             y_axis_name='Time (ms)',
+    #             y_log=True,
+    #             show_legend=True,
+    #             legendsize=26,
+    #             common_font_size=26,
+    #             columnspacing=0.8,
+    #             lengent_ncol=4,
+    #             ymax=100000,
+    #             BAR=False)
+    
+    record_x_name = [2, 4, 6, 8, 10, 12, 14]
+    record_labels = ["DISC", "DenForest", "FDBSCAN", "FDBSCAN-DenseBox", "RTDBStream"]
     total_time = [
-        [117.1270265, 133.5844736, 195.2347218, 592.9089938, 3497.38145],
-        [3.25, 4.08, 5.11, 7.05, 9.03],
-        [17.66, 56.55, 165.67, 325.47, 538.45],
-        [0.301978, 0.407293, 0.547744, 0.614817, 0.79909],
+        [22860, 25100, 21431.15, 24700, 28000, 24300, 25000],
+        [16140, 20677, 20248.875, 15500, 20100, 19700, 18000],
+        [80.9037, 97.9878, 97.7101, 97.9957, 97.7859, 97.7097, 98.1707],
+        [3.60414, 4.44956, 4.65029, 4.79877, 4.99536, 5.09299, 5.20652],
+        [2.33793, 2.28715, 2.28557, 2.28067, 2.2964, 2.32065, 2.3361],
     ]
-    common_draw(total_time, record_labels, None, (0.5, 0.5 + len(record_x_name)),
+    draw_line_chart(
+                total_time, record_labels,
                 record_x_name, "pic/varying-params-legend.pdf",
                 colors=colors,
-                colorOffset=0,
-                selfdef_figsize=(12, 6),
-                x_axis_name='Neighbor Threshold',
+                selfdef_figsize=(20, 6),
+                x_axis_name='Density threshold ($MinPts$)',
                 y_axis_name='Time (ms)',
                 y_log=True,
-                show_legend=True,
-                legendsize=26,
                 common_font_size=26,
+                legend_size=26,
                 columnspacing=0.8,
-                lengent_ncol=4,
-                ymax=100000,
-                BAR=False)
+                lengent_ncol=5)
 
 # draw_vary_ray_num()
 colors = ["#e6b745", "#e64b35", "xkcd:jade", "dodgerblue", "gold"]
 overall_time(colors)
-# optimization_effects(colors)
-# time_distribution(colors)
-# overall_memory(colors + ["gold"])
 # vary_window_size(colors)
 # vary_slide_size(colors)
-# vary_R(colors)
-# vary_K(colors)
+# vary_eps(colors)
+# vary_min_pts(colors)
 # vary_legend(colors)
+optimization_effects(colors)
+# time_distribution(colors)
+# overall_memory(colors + ["gold"])

@@ -98,6 +98,7 @@ struct ScanState
     long                                hits_all_window_cluster;
     int                                 num_rays_in_window;
     long                                num_spheres_all_window;
+    long                                num_points_in_dense_cells;
     long                                num_dist_calculations_all_window;
 
     unordered_map<CELL_ID_TYPE, int>            cell_point_num;
