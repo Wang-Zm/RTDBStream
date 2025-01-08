@@ -407,14 +407,8 @@ void make_gas_from_small_big_sphere(ScanState &state, Timer &timer) {
     cudaEventCreate(&start);
     cudaEventCreate(&end);
     cudaEventRecord(start);
-    // OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
-    // kGenAABB(state.params.centers + state.params.sparse_num, 
-    //          state.radius_one_half, 
-    //          state.params.dense_num, 
-    //          d_aabb + state.params.sparse_num, 
-    //          0);
 
-    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num; // 基于全部的 point 构建 BVH tree
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
     state.vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
 
     OptixAccelBufferSizes gas_buffer_sizes;
@@ -431,13 +425,11 @@ void make_gas_from_small_big_sphere(ScanState &state, Timer &timer) {
                 &accel_options,
                 &state.vertex_input,
                 1, // num build inputs
-                // state.d_gas_temp_buffer_hybrid,
                 state.d_gas_temp_buffer,
                 gas_buffer_sizes.tempSizeInBytes,
-                // state.d_gas_output_buffer_hybrid,
                 state.d_gas_output_buffer,
                 gas_buffer_sizes.outputSizeInBytes,
-                &state.params.handle, // ! 仍然构建到 handle 这里
+                &state.params.handle,
                 nullptr,
                 0
         ));
@@ -462,6 +454,9 @@ void make_gas_by_sparse_points(ScanState &state, Timer &timer) {
     genAABB_hybrid_width(state.params.centers, state.radius, state.radius_one_half, state.params.sparse_num, state.params.center_num, d_aabb, 0);
     // state.vertex_input.customPrimitiveArray.numPrimitives = state.params.sparse_num;
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
+#elif OPTIMIZATION_LEVEL == 2
+    genAABB_hybrid_width(state.params.centers, state.radius, state.radius_one_half, state.params.sparse_num, state.params.center_num, d_aabb, 0);
+    state.vertex_input.customPrimitiveArray.numPrimitives = state.params.sparse_num;
 #else
     kGenAABB(state.params.centers, state.radius, state.params.center_num, d_aabb, 0);
     state.vertex_input.customPrimitiveArray.numPrimitives = state.params.center_num;
@@ -742,7 +737,7 @@ void make_program_groups(ScanState &state) {
     raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
 #if OPTIMIZATION_LEVEL == 0
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__naive";
-#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__grid";
 #else
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__identify_cores";
@@ -776,7 +771,7 @@ void make_program_groups(ScanState &state) {
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
 #if OPTIMIZATION_LEVEL == 0
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__naive";
-#elif OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
+#elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__grid";
 #else
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__identify_cores";
@@ -810,7 +805,7 @@ void make_program_groups(ScanState &state) {
 
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
     hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
-#if OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
+#if OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 3 || OPTIMIZATION_LEVEL == 4 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__hybrid_radius_sphere";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 1 || OPTIMIZATION_LEVEL == 0 || OPTIMIZATION_LEVEL == 5
     hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cluster";
