@@ -92,6 +92,7 @@ struct ScanState
 
     unsigned*                           h_ray_hits;
     unsigned*                           h_ray_intersections;
+    long                                max_ray_intersections;
     long                                intersections_all_window;
     long                                hits_all_window;
     long                                intersections_all_window_cluster;

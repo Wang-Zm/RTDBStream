@@ -149,6 +149,8 @@ void print_rt_info(ScanState &state) {
     for (int i = 0; i < state.window_size; i++) {
         total_intersections += state.h_ray_intersections[i];
         total_hits += state.h_ray_hits[i];
+        if (state.max_ray_intersections < state.h_ray_intersections[i])
+            state.max_ray_intersections = state.h_ray_intersections[i];
     }
     state.intersections_all_window += total_intersections;
     state.hits_all_window += total_hits;
@@ -205,6 +207,8 @@ void print_overall_rt_info(ScanState &state, int num_strides) {
 
     double avg_num_dist_calculations = 1.0 * state.num_dist_calculations_all_window / num_strides;
     printf("avg num dist calculations for each window: %lf\n", avg_num_dist_calculations);
+
+    printf("max intersection tests: %ld\n", state.max_ray_intersections);
 }
 
 inline DATA_TYPE_3 compute_cell_center(ScanState& state, DATA_TYPE_3& point) {
@@ -2536,6 +2540,7 @@ int main(int argc, char *argv[]) {
         state.cell_repres.clear();
     }
 
+    state.max_ray_intersections = 0;
     state.intersections_all_window = 0;
     state.hits_all_window = 0;
     state.intersections_all_window_cluster = 0;
