@@ -39,12 +39,11 @@ void merge_by_cell_id_and_idx(int* pos_arr1, int* pos_arr2, int* pos_arr3, long*
     };
     thrust::stable_partition(pos_ptr1, pos_ptr1 + n, partition);
     
-    auto custom_compare = [point_cell_id, stride_left, stride_right, n] __device__ (int a, int b) { // 把别的放到最后面
+    auto custom_compare = [point_cell_id, stride_left, stride_right, n] __device__ (int a, int b) {
         if (point_cell_id[a] != point_cell_id[b]) 
             return point_cell_id[a] < point_cell_id[b];
         return a < b;
     };
-    // 使用 thrust::merge 并传递自定义比较函数
     thrust::merge(pos_ptr1, pos_ptr1 + n - m,
                   pos_ptr2, pos_ptr2 + m,
                   pos_ptr3,

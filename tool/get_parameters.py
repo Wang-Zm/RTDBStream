@@ -3,21 +3,16 @@ from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 
 def plot_kth_graph(data, fig_name):
-    # 创建折线图
     plt.plot(data, marker='o', linestyle='-', color='b')
 
-    # 设置图表标题和轴标签
     plt.title(fig_name)
     plt.xlabel("Index")
     plt.ylabel("Value")
 
-    # 显示网格
     plt.grid(True)
 
-    # 将图表保存为 PDF 文件
     plt.savefig(fig_name + ".pdf", format="pdf")
 
-    # 显示图表
     # plt.show()
 
 def calc_epi(matrix, k, noise_ratio, fig_name="Line Chart"):
@@ -31,10 +26,9 @@ def calc_epi(matrix, k, noise_ratio, fig_name="Line Chart"):
                 distance = np.linalg.norm(matrix[i] - matrix[j])
                 distances.append(distance)
 
-        kth_distance = np.partition(distances, k-1)[k-1]  # 第 k 小距离
+        kth_distance = np.partition(distances, k-1)[k-1]
         return kth_distance
 
-    # 使用 joblib 并行计算
     result = Parallel(n_jobs=-1)(delayed(calculate_kth_distance)(i) for i in range(rows))
 
     result.sort(reverse=True)
@@ -48,9 +42,7 @@ def get_params_from_rbf():
     data = np.loadtxt('dataset/RBF4_40000.csv', delimiter=',', skiprows=1, usecols=(0, 1))
     print(data.shape)
     W = 10000
-    # 随机获取若干行
     random_rows = np.random.choice(data.shape[0], size=W, replace=False)
-    # 提取随机行
     selected_rows = data[random_rows, :]
     K = 2 * 2 - 1 # from Ester et al
     noise_ratio = 0.01

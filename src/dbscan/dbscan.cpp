@@ -265,7 +265,7 @@ void find_neighbors_cores_async(ScanState &state, int update_pos, const cudaStre
 }
 
 void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
-    // 3.获取球的球心和半径
+    // Obtain the center and radius of the ball
     timer.startTimer(&timer.get_centers_radii);
     state.h_centers.clear();
     state.h_radii.clear();
@@ -289,7 +289,6 @@ void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
             state.h_cell_point_num.push_back(point_num); // 记录点数多少
             state.d_cell_points[sphere_id] = state.params.pos_arr + j;
             
-            // 设置该 cell 中的点的 cid
             for (int t = 0; t < point_num; t++) {
                 state.h_cluster_id[pos_arr[j++]] = i; 
             }
@@ -301,7 +300,7 @@ void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
                 state.h_centers.push_back(state.h_window[i]);
                 state.h_radii.push_back(state.radius);
                 state.h_center_idx_in_window.push_back(i);
-                state.h_cell_point_num.push_back(1); // 占空
+                state.h_cell_point_num.push_back(1);
                 state.h_cluster_id[i] = i;
                 j++;
                 sphere_id++;
@@ -310,9 +309,9 @@ void set_centers_radii_cpu(ScanState &state, int* pos_arr) {
     }
     timer.stopTimer(&timer.get_centers_radii);
 
-    // 4.传送到 GPU
-    timer.startTimer(&timer.cell_points_memcpy); // TODO: Merge these cudaMemcpy calls
-    CUDA_CHECK(cudaMemcpy(state.params.pos_arr, // 将 pos_arr 复制到 GPU
+    // Transfer to the GPU
+    timer.startTimer(&timer.cell_points_memcpy);
+    CUDA_CHECK(cudaMemcpy(state.params.pos_arr,
                           pos_arr, 
                           state.window_size * sizeof(int), 
                           cudaMemcpyHostToDevice));
@@ -356,12 +355,7 @@ void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
     }
     timer.stopTimer(&timer.compute_uniq_pos_arr);
 
-    // TODO: Explore why recording time adds latency
-    // ! When use recording, compute_uniq_pos_arr increases a lot.
     state.params.center_num = num_centers;
-    // CUDA_CHECK(cudaEventCreate(&timer.start1));
-    // CUDA_CHECK(cudaEventCreate(&timer.stop1));
-    // CUDA_CHECK(cudaEventRecord(timer.start1, state.stream2));
     CUDA_CHECK(cudaMemcpyAsync(state.params.pos_arr + state.window_size, uniq_pos_arr, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice, 0));
     CUDA_CHECK(cudaMemcpyAsync(state.params.cell_point_num, num_points, state.params.center_num * sizeof(int), cudaMemcpyHostToDevice, 0));
     CUDA_CHECK(cudaMemcpyAsync(state.params.pos_arr, pos_arr, state.window_size * sizeof(int), cudaMemcpyHostToDevice, 0));
@@ -371,12 +365,6 @@ void set_centers_radii_gpu(ScanState &state, int* pos_arr) {
         state.params.centers, state.params.radii, state.params.cluster_id, state.params.cell_points, state.params.center_idx_in_window,
         0
     );
-    // CUDA_CHECK(cudaEventRecord(timer.stop1, state.stream2));
-    // CUDA_CHECK(cudaEventSynchronize(timer.stop1));
-    // CUDA_CHECK(cudaEventElapsedTime(&timer.milliseconds1, timer.start1, timer.stop1));
-    // timer.set_centers_radii += timer.milliseconds1;
-    // CUDA_CHECK(cudaEventDestroy(timer.start1));
-    // CUDA_CHECK(cudaEventDestroy(timer.stop1));
 }
 
 void set_centers_sparse(ScanState &state) {
@@ -401,7 +389,7 @@ void set_centers_sparse(ScanState &state) {
                     id = pos;
             }
             for (int& pos : item.second) {
-                state.h_cluster_id[pos] = id; // ! Early cluster is not effective
+                state.h_cluster_id[pos] = id;
             }
             num_dense_cells++;
         }
@@ -445,7 +433,7 @@ void set_centers_sparse_without_vector(ScanState &state) {
 }
 
 void set_centers_sparse_gpu(ScanState &state) {
-    // 1.计算 offsets
+    // 1.compute offsets
     timer.startTimer(&timer.compute_offsets);
     CUDA_CHECK(cudaMemset(state.params.num_offsets, 0, sizeof(int)));
     compute_offsets_of_cells(state.window_size, state.params.pos_arr, state.params.point_cell_id, state.params.offsets, state.params.num_offsets);
@@ -454,7 +442,7 @@ void set_centers_sparse_gpu(ScanState &state) {
     thrust_sort(state.params.offsets, num_offsets);
     timer.stopTimer(&timer.compute_offsets);
 
-    // 2.设置 centers, cell_points
+    // 2.set centers, cell_points
     timer.startTimer(&timer.set_centers_radii);
     int num_cells = num_offsets - 1;
     CUDA_CHECK(cudaMemset(state.params.sparse_offset, 0, sizeof(int)));
@@ -553,7 +541,7 @@ void set_hybrid_aabb(ScanState &state) {
 }
 
 void set_hybrid_aabb_gpu(ScanState &state) {
-    // 1.计算 offsets
+    // 1.compute offsets
     timer.startTimer(&timer.compute_offsets);
     CUDA_CHECK(cudaMemset(state.params.num_offsets, 0, sizeof(int)));
     compute_offsets_of_cells(state.window_size, state.params.pos_arr, state.params.point_cell_id, state.params.offsets, state.params.num_offsets);
@@ -562,7 +550,7 @@ void set_hybrid_aabb_gpu(ScanState &state) {
     thrust_sort(state.params.offsets, num_offsets);
     timer.stopTimer(&timer.compute_offsets);
 
-    // 2.统计有多少 sparse point
+    // 2.count sparse points
     timer.startTimer(&timer.count_sparse_points);
     int num_cells = num_offsets - 1;
     CUDA_CHECK(cudaMemset(state.params.num_points_in_dense_cells, 0, sizeof(int)));
@@ -575,14 +563,14 @@ void set_hybrid_aabb_gpu(ScanState &state) {
     int num_points_in_sparse_cells = state.window_size - num_points_in_dense_cells;
     state.params.sparse_num = num_points_in_sparse_cells;
     state.params.dense_num = num_points_in_dense_cells;
-    state.params.center_num = num_dense_cells + num_points_in_sparse_cells; // dense cell 的个数 + sparse point 的个数
+    state.params.center_num = num_dense_cells + num_points_in_sparse_cells; // Number of dense cells + number of sparse points
     // printf("sparse_num = %d\n", num_points_in_sparse_cells);
     // printf("dense_num = %d\n", num_points_in_dense_cells);
     // printf("center_num = %d\n", state.params.center_num);
     // printf("num_cells = %d\n", num_cells);
     timer.stopTimer(&timer.count_sparse_points);
 
-    // 3.设置 centers, center_idx_in_window, cluster_id
+    // 3.set centers, center_idx_in_window, cluster_id
     timer.startTimer(&timer.set_centers_radii);
     CUDA_CHECK(cudaMemset(state.params.sparse_offset, 0, sizeof(int)));
     CUDA_CHECK(cudaMemcpy(state.params.dense_offset, &num_points_in_sparse_cells, sizeof(int), cudaMemcpyHostToDevice));
@@ -619,11 +607,10 @@ void get_centers_radii_device(ScanState &state) {
             cell_repres[cell_id] = i;
             state.h_center_idx_in_window.push_back(i);
 
-            // TODO: 可以使用原子操作计算当前是第一个 center，然后多线程加速
-            int cell_sphere_num = state.h_centers.size() - 1; // 和 primIdx 保持一致
+            int cell_sphere_num = state.h_centers.size() - 1;
             cell_id_list.push_back(cell_id);
-            cell_sphere_num_list.push_back(cell_sphere_num); // 表示第几个 point 是 sphere 的 center
-            state.h_cell_point_num.push_back(state.cell_point_num[cell_id]); // 记录点数多少
+            cell_sphere_num_list.push_back(cell_sphere_num);
+            state.h_cell_point_num.push_back(state.cell_point_num[cell_id]);
         } else {
             state.h_centers.push_back(state.h_window[i]);
             state.h_radii.push_back(state.radius);
@@ -637,7 +624,7 @@ void get_centers_radii_device(ScanState &state) {
     timer.startTimer(&timer.dense_cell_points_copy);
     int curr_pos = 0;
     for (size_t i = 0; i < cell_sphere_num_list.size(); i++) {
-        // Strategy 1: 为每个 dense cell 申请空间，将数据传输其中
+        // Strategy 1: Allocate space for each dense cell and transfer data to it
         // CUDA_CHECK(cudaMalloc(&state.d_cell_points[cell_sphere_num_list[i]], state.cell_point_num[cell_id_list[i]] * sizeof(int)));
         // timer.startTimer(&timer.spheres_copy);
         // CUDA_CHECK(cudaMemcpy(state.d_cell_points[cell_sphere_num_list[i]], 
@@ -646,7 +633,7 @@ void get_centers_radii_device(ScanState &state) {
         //                         cudaMemcpyHostToDevice));
         // timer.stopTimer(&timer.spheres_copy);
 
-        // Strategy 2: 将数据复制到一维空间，然后设置 state.params.cell_points；
+        // Strategy 2: Copy the data to a one-dimensional space and then set state.params.cell_points;
         memcpy(state.points_in_dense_cells + curr_pos, 
                state.cell_points[cell_id_list[i]].data(), 
                state.cell_point_num[cell_id_list[i]] * sizeof(int));
@@ -678,7 +665,7 @@ void get_centers_radii_device(ScanState &state) {
     timer.stopTimer(&timer.cell_points_memcpy);
 }
 
-void early_cluster(ScanState &state) { // 根据所属的 cell，快速设置 cluster id
+void early_cluster(ScanState &state) {
     unordered_map<int, int> &cell_repres = state.cell_repres;
     for (int i = 0; i < state.window_size; i++) {
         CELL_ID_TYPE cell_id = state.h_point_cell_id[i];
@@ -710,7 +697,7 @@ vector<CELL_ID_TYPE> calc_neighbor_cells(ScanState &state, DATA_TYPE_3 point) {
                     if (sqrt(dx * dx + dy * dy + dz * dz) * state.cell_length < dist_thres) {
                         CELL_ID_TYPE nx = dim_id_x + dx, ny = dim_id_y + dy, nz = dim_id_z + dz;
                         CELL_ID_TYPE id = nx * state.cell_count[1] * state.cell_count[2] + ny * state.cell_count[2] + nz;
-                        if (state.cell_point_num[id] >= state.min_pts) { // 必须判别是否是 dense，是 dense 再放进去
+                        if (state.cell_point_num[id] >= state.min_pts) {
                             res.push_back(id);
                         }
                     }
@@ -722,7 +709,7 @@ vector<CELL_ID_TYPE> calc_neighbor_cells(ScanState &state, DATA_TYPE_3 point) {
                     if (sqrt(dx * dx + dy * dy + dz * dz) * state.cell_length < dist_thres) {
                         CELL_ID_TYPE nx = dim_id_x + dx, ny = dim_id_y + dy, nz = dim_id_z + dz;
                         CELL_ID_TYPE id = nx * state.cell_count[1] * state.cell_count[2] + ny * state.cell_count[2] + nz;
-                        if (state.cell_point_num[id] >= state.min_pts) { // 必须判别是否是 dense，是 dense 再放进去
+                        if (state.cell_point_num[id] >= state.min_pts) {
                             res.push_back(id);
                         }
                     }
@@ -750,12 +737,11 @@ bool check_neighbor_cells(ScanState &state, DATA_TYPE_3 p1, DATA_TYPE_3 p2) {
     return false;
 }
 
-// 基于从当前 cell 向后扩散的方式找 neighbor cells
 map<CELL_ID_TYPE, vector<CELL_ID_TYPE>> find_neighbor_cells_extend(ScanState &state) {
     int *pos_arr = state.pos_arr;
     map<CELL_ID_TYPE, vector<CELL_ID_TYPE>> neighbor_cells_of_dense_cells;
     int j = 0;
-    while (j < state.window_size) { // TODO：似乎也能够使用多线程机制
+    while (j < state.window_size) {
         CELL_ID_TYPE cell_id = state.h_point_cell_id[pos_arr[j]];
         int point_num = state.cell_point_num[cell_id];
         if (point_num >= state.min_pts) {
@@ -776,7 +762,7 @@ map<CELL_ID_TYPE, vector<CELL_ID_TYPE>> find_neighbor_cells(ScanState &state) {
         CELL_ID_TYPE cell_id = state.h_point_cell_id[pos_arr[i]];
         int point_num = state.cell_point_num[cell_id];
         if (point_num >= state.min_pts) {
-            // 找 cell_id 的邻居
+            // Find cell_id's neighbors
             int j = i + point_num;
             CELL_ID_TYPE other_cell_id;
             while (j < state.window_size) {
@@ -841,7 +827,6 @@ void find_neighbors_of_cells(ScanState &state) {
     neighbor_cells_capacity.clear();
     unordered_map<CELL_ID_TYPE, pair<int, int>> neighbor_cells_pos_and_num;
       
-    // 将 neighbor_cells_list 和 neighbor_cells_capacity 放到邻居列表中
     CUDA_CHECK(cudaMemcpy(state.params.d_neighbor_cells_list, 
                           neighbor_cells_list.data(), 
                           neighbor_cells_list.size() * sizeof(int), 
@@ -852,12 +837,9 @@ void find_neighbors_of_cells(ScanState &state) {
                           cudaMemcpyHostToDevice));
     timer.stopTimer(&timer.put_neighbor_cells_list);
 
-    // 也要记录每个 dense cell 的 neighbors 的开始位置，维护好一个这样的映射
-    // 为每个 dense cell 中的点准备这些信息，让其通过 CUDA 加速的时候能够有效果
     timer.startTimer(&timer.prepare_for_points_in_dense_cells);
     int* neighbor_cells_pos = state.neighbor_cells_pos;
     int* neighbor_cells_num = state.neighbor_cells_num;
-    // #pragma omp parallel for // 会影响其他部分的性能
     for (int j = 0; j < state.window_size; j++) {
         CELL_ID_TYPE cell_id = state.h_point_cell_id[j];
         if (neighbor_cells_pos_and_num.count(cell_id)) {
@@ -869,7 +851,6 @@ void find_neighbors_of_cells(ScanState &state) {
         }
     }
 
-    // 试试使用 CPU 多线程的情况
     // thread threads[THREAD_NUM];
     // int block = (state.window_size + THREAD_NUM - 1) / THREAD_NUM;
     // for (int i = 0; i < THREAD_NUM; i++) {
@@ -886,7 +867,6 @@ void find_neighbors_of_cells(ScanState &state) {
     timer.stopTimer(&timer.prepare_for_points_in_dense_cells);
 }
 
-// 借助 cuCollection 来进行加速
 void find_neighbors_of_cells_gpu(ScanState &state) {
     timer.startTimer(&timer.find_neighbor_cells);
     map<CELL_ID_TYPE, vector<CELL_ID_TYPE>> neighbor_cells_of_dense_cells = find_neighbor_cells_extend(state);
@@ -906,7 +886,6 @@ void find_neighbors_of_cells_gpu(ScanState &state) {
             neighbor_cells_capacity.push_back(state.cell_point_num[cell_id]);
         }
     }
-    // 将 neighbor_cells_list 和 neighbor_cells_capacity 放到邻居列表中
     CUDA_CHECK(cudaMemcpy(state.params.d_neighbor_cells_list, 
                           neighbor_cells_list.data(), 
                           neighbor_cells_list.size() * sizeof(int), 
@@ -917,12 +896,9 @@ void find_neighbors_of_cells_gpu(ScanState &state) {
                           cudaMemcpyHostToDevice));
     timer.stopTimer(&timer.put_neighbor_cells_list);
 
-    // 也要记录每个 dense cell 的 neighbors 的开始位置，维护好一个这样的映射
-    // 为每个 dense cell 中的点准备这些信息，让其通过 CUDA 加速的时候能够有效果
     timer.startTimer(&timer.prepare_for_points_in_dense_cells);
     int* neighbor_cells_pos = state.neighbor_cells_pos;
     int* neighbor_cells_num = state.neighbor_cells_num;
-    // CUDA：将 neighbor_cells_pos_and_num 转移到 GPU 中，调用核函数来解决
     for (int j = 0; j < state.window_size; j++) {
         CELL_ID_TYPE cell_id = state.h_point_cell_id[j];
         if (neighbor_cells_pos_and_num.count(cell_id)) {
@@ -939,7 +915,6 @@ void find_neighbors_of_cells_gpu(ScanState &state) {
 }
 
 void cluster_dense_cells_cpu_check(ScanState &state) {
-    // 用 map 记录每个 cell_id 在 pos_arr 中的起始位置
     map<CELL_ID_TYPE, int> start_pos_of_cell;
     for (int i = 0; i < state.window_size;) {
         CELL_ID_TYPE cell_id = state.h_point_cell_id[state.pos_arr[i]];
@@ -950,9 +925,7 @@ void cluster_dense_cells_cpu_check(ScanState &state) {
         i += point_num;
     }
     
-    // 根据 h_cluster_id 设置 cluster_id
     memcpy(state.check_h_cluster_id, state.h_cluster_id, state.window_size * sizeof(int));
-    // 使用低效的笨办法进行测试
     int i = 0;
     int* pos_arr = state.pos_arr;
     int* cid = state.check_h_cluster_id;
@@ -971,12 +944,11 @@ void cluster_dense_cells_cpu_check(ScanState &state) {
             if (!check_neighbor_cells(state, point, state.h_window[pos_arr[it->second]])) {
                 continue;
             }
-            if (state.cell_point_num[it->first] >= state.min_pts) { // 只和 dense cell 进行判别
+            if (state.cell_point_num[it->first] >= state.min_pts) {
                 for (int j = it->second; j < it->second + state.cell_point_num[it->first]; j++) {
                     if (find(i, cid) == find(pos_arr[j], cid)) {
                         break;
                     }
-                    // 计算距离
                     DATA_TYPE_3 O = {point.x - state.h_window[pos_arr[j]].x, 
                                      point.y - state.h_window[pos_arr[j]].y,
                                      point.z - state.h_window[pos_arr[j]].z};
@@ -1074,11 +1046,11 @@ void dbscan_naive(ScanState &state, bool timing) {
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.out_stride_ray);
 
-        // 插入 in stride
+        // in stride
         timer.startTimer(&timer.in_stride_bvh);
         CUDA_CHECK(cudaMemcpy(state.params.out, state.new_stride, state.stride_size * sizeof(DATA_TYPE_3), cudaMemcpyHostToDevice));
         rebuild_gas(state, update_pos);
-        // 重置 in/out stride 部分 nn
+        // reset nn for in/out stride
         CUDA_CHECK(cudaMemset(state.params.nn + update_pos * state.stride_size, 0, state.stride_size * sizeof(int)));
         timer.stopTimer(&timer.in_stride_bvh);
 
@@ -1145,7 +1117,6 @@ void dbscan_identify_cores(ScanState &state, bool timing) {
 
     log_common_info(state);
 
-    // * 设置 buffer 数组
     state.d_gas_temp_buffer_list   = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
     state.d_gas_output_buffer_list = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
     state.handle_list              = (OptixTraversableHandle*) malloc(unit_num * sizeof(OptixTraversableHandle));
@@ -1180,7 +1151,7 @@ void dbscan_identify_cores(ScanState &state, bool timing) {
         // printf("number of cores: %d\n", num_cores);
 
         timer.startTimer(&timer.whole_bvh);
-        rebuild_gas(state); // 不再更新aabb，因为rebuild_gas已经更新好
+        rebuild_gas(state);
         timer.stopTimer(&timer.whole_bvh);
 
         CUDA_CHECK(cudaMemcpy(state.h_label, state.params.label, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
@@ -1194,7 +1165,6 @@ void dbscan_identify_cores(ScanState &state, bool timing) {
         timer.startTimer(&timer.set_cluster_id);
         state.params.window_id = stride_num + 1;
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        // 从 core 发射光线：1）只与小的 core 进行相交测试，若遇到 core，则向 idx 小的 core 聚类 2）若遇到 border，且 border 的 cid 已经设置过，则直接跳过；否则使用原子操作设置该 border
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_cluster_id);
@@ -1234,7 +1204,6 @@ void dbscan_identify_cores(ScanState &state, bool timing) {
     printf("[Step] Finish sliding the window...\n");
 }
 
-// ! `early_cluster` is useless
 void dbscan_with_grid(ScanState &state, bool timing) {
     int remaining_data_num  = state.data_num - state.window_size;
     int unit_num            = state.window_size / state.stride_size;
@@ -1305,7 +1274,7 @@ void dbscan_with_grid(ScanState &state, bool timing) {
         timer.startTimer(&timer.early_cluster);
         for (int i = window_left; i < window_left + state.stride_size; i++) {
             CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // get_cell_id 方法需要改造一下
-            state.cell_point_num.erase(cell_id); // TODO: state.cell_point_num[cell_id]--，不应该直接删除该item
+            state.cell_point_num.erase(cell_id);
         }
         for (int i = window_right; i < window_right + state.stride_size; i++) {
             CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
@@ -1319,7 +1288,7 @@ void dbscan_with_grid(ScanState &state, bool timing) {
             CELL_ID_TYPE cell_id = get_cell_id(state.h_window, state.min_value, state.cell_count, state.cell_length, i);
             if (state.cell_point_num[cell_id] >= state.min_pts) {
                 dense_core_num++;
-                if (cell_repres.count(cell_id)) { // 未统计每个 grid 中有多少数据，而是直接说明有多少个数
+                if (cell_repres.count(cell_id)) {
                     state.h_cluster_id[i] = cell_repres[cell_id];
                 } else {
                     state.h_cluster_id[i] = i;
@@ -1338,7 +1307,6 @@ void dbscan_with_grid(ScanState &state, bool timing) {
 
         timer.startTimer(&timer.set_cluster_id);
         CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(state.d_params), &state.params, sizeof(Params), cudaMemcpyHostToDevice));
-        // 从 core 发射光线：1）只与小的 core 进行相交测试，若遇到 core，则向 idx 小的 core 聚类 2）若遇到 border，且 border 的 cid 已经设置过，则直接跳过；否则使用原子操作设置该 border
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
         CUDA_SYNC_CHECK();
         timer.stopTimer(&timer.set_cluster_id);
@@ -1484,7 +1452,6 @@ void dbscan_async(ScanState &state, bool timing) {
 
     log_common_info(state);
 
-    // * 设置 buffer 数组
     state.d_gas_temp_buffer_list   = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
     state.d_gas_output_buffer_list = (CUdeviceptr*) malloc(unit_num * sizeof(CUdeviceptr));
     state.handle_list              = (OptixTraversableHandle*) malloc(unit_num * sizeof(OptixTraversableHandle));
@@ -1935,12 +1902,12 @@ void dbscan_grid_cores_hybrid_bvh(ScanState &state, bool timing) {
         CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.params.center_num * sizeof(int), cudaMemcpyDeviceToHost));
         timer.stopTimer(&timer.find_cores);
         memset(state.h_label, 0, state.window_size * sizeof(int)); // Set all points to cores
-        for (int i = 0; i < state.params.center_num; i++) { // TODO: Can be accelerated by CUDA
+        for (int i = 0; i < state.params.center_num; i++) {
             if (state.h_nn[i] < state.min_pts) { // Mark noises
                 state.h_label[state.h_center_idx_in_window[i]] = 2; // Noise
             }
         }
-        set_centers_radii_gpu(state, pos_arr); // 其中会设置 cluster_id
+        set_centers_radii_gpu(state, pos_arr);
         make_gas_by_cell(state, timer);
         CUDA_CHECK(cudaMemcpy(state.params.label, state.h_label, state.window_size * sizeof(int), cudaMemcpyHostToDevice));
         timer.stopTimer(&timer.pre_process);
@@ -2053,7 +2020,6 @@ void dbscan_grid_cores_hybrid_bvh_op(ScanState &state, bool timing) {
         timer.stopTimer(&timer.set_label);
         timer.stopTimer(&timer.pre_process);
 
-        // 构建好 hybrid BVH tree 后聚类
         timer.startTimer(&timer.set_cluster_id);
         OPTIX_CHECK(optixLaunch(state.pipeline_cluster, 0, state.d_params, sizeof(Params), &state.sbt_cluster, state.window_size, 1, 1));
         // CUDA_SYNC_CHECK();
@@ -2416,7 +2382,7 @@ void cleanup(ScanState &state) {
     CUDA_CHECK(cudaFreeHost(state.h_center_idx_in_window_p));
     CUDA_CHECK(cudaFreeHost(state.h_cell_point_num_p));
 #if OPTIMIZATION_LEVEL == 3
-    free(state.d_gas_temp_buffer_list); // TODO: free 其中的每一项
+    free(state.d_gas_temp_buffer_list);
     free(state.d_gas_output_buffer_list);
 #endif
 

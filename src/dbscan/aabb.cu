@@ -128,7 +128,7 @@ static __forceinline__ __device__ void unite(int ray_id, int primIdx, int* cid) 
     int ray_rep = find_repres(ray_id, cid);
     int prim_rep = find_repres(primIdx, cid);
     bool repeat;
-    do { // 设置 core
+    do { // set core
         repeat = false;
         if (ray_rep != prim_rep) {
             int ret;
@@ -147,54 +147,15 @@ static __forceinline__ __device__ void unite(int ray_id, int primIdx, int* cid) 
     } while (repeat);
 }
 
-/**
- * 1.收集 c_out, ex_cores, neo_cores
- * 2.label 设置
-*/
-// extern "C" void set_label_collect_cores(int* label, 
-// 										int* nn,
-// 										DATA_TYPE_3* window,
-// 										DATA_TYPE_3* out_stride,
-// 										int window_size,
-// 										int out_start,
-// 										int out_end,
-// 										DATA_TYPE_3* c_out,
-//                     DATA_TYPE_3* ex_cores,
-// 										DATA_TYPE_3* neo_cores,
-// 										int* c_out_num,
-// 										int* ex_cores_num,
-// 										int* neo_cores_num,
-// 										int min_pts) {
-//   unsigned threadsPerBlock = 64;
-//   unsigned numOfBlocks = (window_size + threadsPerBlock - 1) / threadsPerBlock;
-
-//   collect_t <<<numOfBlocks, threadsPerBlock>>> (
-// 	label,
-// 	nn,	
-// 	window,
-// 	out_stride,
-// 	window_size,
-// 	out_start,
-// 	out_end,
-// 	c_out,
-// 	ex_cores,
-// 	neo_cores,
-// 	c_out_num,
-// 	ex_cores_num,
-// 	neo_cores_num,
-// 	min_pts
-//   );
-// }
-
 __global__ void find_cores_t(int* label, int* nn, int* cluster_id, int window_size, int min_pts) {
 	unsigned idx = blockIdx.x * blockDim.x + threadIdx.x;
   	if (idx >= window_size) return;
 	if (nn[idx] >= min_pts) {
 		label[idx] = 0;
 	} else {
-		label[idx] = 2;  	// 初始化为 noise
+		label[idx] = 2;  	// init noise
 	}
-	cluster_id[idx] = idx; 	// 初始化 cluster
+	cluster_id[idx] = idx; 	// init cluster
 }
 
 extern "C" void find_cores(int* label, int* nn, int* cluster_id, int window_size, int min_pts, cudaStream_t stream) {
@@ -259,61 +220,11 @@ extern "C" void find_neighbors(int* nn, DATA_TYPE_3* window, int window_size, DA
 	);  
 }
 
-// __global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2, int operation) {
-// 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-//   	if (i >= window_size) return;
-// 	DATA_TYPE_3 p = window[i];
-//  	if (operation != 2) {
-// 		if (label[i] == 0) { // 只和前面的 core 进行比较
-// 			for (int j = 0; j < i; j++) {
-// 				if (label[j] == 0) {
-// 					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-// 					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-// 					if (d < radius2) {
-// 						if (i == 2747) {
-// 							printf("set_cluster_id_op_t, i=%d, j=%d, d=%lf, window[%d]={%lf, %lf, %lf}, window[%d]={%lf, %lf, %lf}\n", i, j, d, j, window[j].x, window[j].y, window[j].z, i, window[i].x, window[i].y, window[i].z);
-// 						}
-// 						cluster_id[i] = j;
-// 						break;
-// 					}
-// 				}
-// 			}
-// 		} else {			// border，设置 cid 为找到的第一个 core
-// 			for (int j = 0; j < window_size; j++) {
-// 				if (j == i) continue;
-// 				if (label[j] == 0) {
-// 					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-// 					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-// 					if (d < radius2) {
-// 						cluster_id[i] = j;
-// 						label[i] = 1;
-// 						break;
-// 					}
-// 				}
-// 			}
-// 		}
-// 	} else {
-// 		if (label[i] == 0 && cluster_id[i] == i) { // 只和后面的 core 进行比较
-// 			for (int j = i + 1; j < window_size; j++) {
-// 				if (label[j] == 0 && i > cluster_id[j]) {
-// 					DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
-// 					DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-// 					if (d < radius2) {
-// 						cluster_id[i] = cluster_id[j];
-// 						printf("i=%d, params.check_cluster_id[%d]=%d\n", i, j, cluster_id[j]);
-// 						break;
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-// }
-
 __global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* window, int window_size, DATA_TYPE radius2) {
 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
   	if (i >= window_size) return;
 	DATA_TYPE_3 p = window[i];
-	if (label[i] == 0) { // 只和前面的 core 进行比较
+	if (label[i] == 0) { // compare only with the previous core
 		for (int j = 0; j < i; j++) {
 			if (label[j] != 0) continue;
 			DATA_TYPE_3 O = {p.x - window[j].x, p.y - window[j].y, p.z - window[j].z};
@@ -321,7 +232,7 @@ __global__ void set_cluster_id_op_t(int* label, int* cluster_id, DATA_TYPE_3* wi
 			if (d >= radius2) continue;
 			unite(i, j, cluster_id);
 		}
-	} else {			// border，设置 cid 为找到的第一个 core 的 repres
+	} else {			// border，set cid as the first core's repres found
 		for (int j = 0; j < window_size; j++) {
 			if (j == i) continue;
 			if (label[j] == 0) {
@@ -349,50 +260,6 @@ extern "C" void set_cluster_id(int* nn, int* label, int* cluster_id, DATA_TYPE_3
 	);
 }
 
-// __global__ void update_grid_t(DATA_TYPE_3* data, int data_num, DATA_TYPE cell_width, uint3 grid_d, KeyValue* pHashTable) {
-// 	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-//   	if (i >= data_num) return;
-// 	unsigned cell_idx_x = data[i].x / cell_width;
-// 	unsigned cell_idx_y = data[i].y / cell_width;
-// 	unsigned cell_idx_z = data[i].z / cell_width;
-// 	unsigned cell_id = cell_idx_x * grid_d.y * grid_d.z + cell_idx_y * grid_d.z + cell_idx_z;
-// 	// cell_id 对应的 value + 1
-// 	// 如果 gpu 比较困难，那么找别的东西
-// 	// 需求就是 cell_id 对应的 slot 中的 value 进行原子操作，因此只要找到一个索引即可
-// }
-
-// extern "C" void update_grid(DATA_TYPE_3* data, int data_num, DATA_TYPE cell_width, uint3 grid_d, KeyValue* pHashTable) { // grid_d.x|y|z，cell_width, 
-// 	unsigned threadsPerBlock = 64;
-// 	unsigned numOfBlocks = (data_num + threadsPerBlock - 1) / threadsPerBlock;
-// 	update_grid_t <<<numOfBlocks, threadsPerBlock>>> (
-// 		data,
-// 		data_num,
-// 		cell_width,
-// 		grid_d,
-// 		pHashTable
-// 	);
-// }
-
-/**
- * 已有信息：
- * window 窗口中的点
- * radius 半径
- * pos_arr 原始的 pos_arr
- * uniq_pos_arr 合并大球后的每个球的中心在 pos_arr 的 offset
- * num_points 每个点对应的球中的点数，用来确认大球还是小球
- * min_pts 邻居阈值
- * min_val 数据空间范围最小值
- * cell_length cell 的边长
- * num_centers center 的个数
- * 设置信息：
- * centors 球的中心
- * radii 球的半径
- * cluster_id 窗口中每个点的 cluster id 的设置
- * cell_points 每个大球对应的点的起始位置
- * center_idx_in_window 每个 center 在窗口中的位置，便于光追过程中的聚类；这个似乎可以通过 uniq_pos_arr 获取到，其实就是 i
- * 阶段：
- * 1.只使用全局内存实现功能
- */
 __global__ void set_centers_radii_t(DATA_TYPE_3* window, DATA_TYPE radius, int* pos_arr, int* uniq_pos_arr, int* num_points, int min_pts, DATA_TYPE* min_value, DATA_TYPE cell_length, int num_centers,
 								    DATA_TYPE_3* centers, DATA_TYPE* radii, int* cluster_id, int** cell_points, int* center_idx_in_window) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -400,7 +267,7 @@ __global__ void set_centers_radii_t(DATA_TYPE_3* window, DATA_TYPE radius, int* 
 		return;
 	}
 	int offset = uniq_pos_arr[idx];
-	int i = pos_arr[offset]; // 在 window 中的位置
+	int i = pos_arr[offset];
 	if (num_points[idx] < min_pts) {
 		centers[idx] = window[i];
 		radii[idx] = radius;
@@ -419,18 +286,6 @@ __global__ void set_centers_radii_t(DATA_TYPE_3* window, DATA_TYPE radius, int* 
 		for (int t = 0; t < num_points[idx]; t++) {
 			cluster_id[pos_arr[offset + t]] = i;
 		}
-		// int t = 0;
-		// int times = num_points[idx] / 4;
-		// for (; t < times; t++) {
-		// 	cluster_id[pos_arr[offset + 4 * t]] = i;
-		// 	cluster_id[pos_arr[offset + 4 * t + 1]] = i;
-		// 	cluster_id[pos_arr[offset + 4 * t + 2]] = i;
-		// 	cluster_id[pos_arr[offset + 4 * t + 3]] = i;
-		// }
-		// while (t < num_points[idx]) {
-		// 	cluster_id[pos_arr[offset + t]] = i;
-		// 	t++;
-		// }
 	}
 }
 
@@ -458,44 +313,18 @@ __global__ void cluster_dense_cells_t(int* pos_arr,
 	if (idx >= window_size) {
 		return;
 	}
-	// int pos = idx;
-	int pos = pos_arr[idx]; // 这样相邻线程的下面 if 判别会走相同的路径，减少线程束发散 -> 对性能没有影响，问题不大
+	int pos = pos_arr[idx];
 	if (d_neighbor_cells_pos[pos] < 0) {
 		return;
 	}
 	DATA_TYPE_3 p = window[pos];
-	// for (int i = 0; i < d_neighbor_cells_num[pos]; i++) { // 得到当前 cell 有几个邻居 cell
-	// 	int nei_cell_pos = d_neighbor_cells_pos[pos] + i; // 得到邻居 cell 的信息 item 在 d_neighbor_cells_list 中的位置
-	// 	int start_pos = d_neighbor_cells_list[nei_cell_pos]; // 这个邻居 cell 在 pos_arr 中的位置
-	// 	int point_num = d_neighbor_cells_capacity[nei_cell_pos]; // 邻居 cell 中的 point 数量
-	// 	for (int j = start_pos; j < start_pos + point_num; j++) {
-	// 		// 判断是否已经是否是一个集群了，如果是，则直接跳过
-	// 		int &pos_arrj = pos_arr[j];
-	// 		int rep1 = find_repres(pos, cluster_id);
-	// 		int rep2 = find_repres(pos_arrj, cluster_id);
-	// 		if (rep1 == rep2) {
-	// 			break;
-	// 		}
-	// 		// 计算距离
-	// 		DATA_TYPE_3 O = {p.x - window[pos_arrj].x, p.y - window[pos_arrj].y, p.z - window[pos_arrj].z};
-	// 		DATA_TYPE d = O.x * O.x + O.y * O.y + O.z * O.z;
-	// 		if (d < radius2) {
-	// 			unite(pos, pos_arrj, cluster_id);
-	// 			break;
-	// 		}
-	// 	}
-	// }
-
-	// 一个 block 中的点一次和对应的 block 中的点进行计算，并且加载一次之后就一直算
-	// 1.把当前 cell 中的点加载到
-
-	for (int i = 0; i < d_neighbor_cells_num[pos]; i++) { // 得到当前 cell 有几个邻居 cell
-		int nei_cell_pos = d_neighbor_cells_pos[pos] + i; // 得到邻居 cell 的信息 item 在 d_neighbor_cells_list 中的位置
-		int start_pos = d_neighbor_cells_list[nei_cell_pos]; // 这个邻居 cell 在 pos_arr 中的位置
-		int point_num = d_neighbor_cells_capacity[nei_cell_pos]; // 邻居 cell 中的 point 数量
+	for (int i = 0; i < d_neighbor_cells_num[pos]; i++) {
+		int nei_cell_pos = d_neighbor_cells_pos[pos] + i;
+		int start_pos = d_neighbor_cells_list[nei_cell_pos];
+		int point_num = d_neighbor_cells_capacity[nei_cell_pos];
 		if (find_repres(pos, cluster_id) == find_repres(pos_arr[start_pos], cluster_id)) {
-			continue; // 每次进入循环时都判别一次是否要聚类，频繁判别会降低性能，
-		} // 在一切开始的时候进行判别，确定是否需要聚类，如果不需要则直接跳出去
+			continue;
+		}
 		for (int j = start_pos; j < start_pos + point_num; j++) {
 			int &pos_arrj = pos_arr[j];
 			DATA_TYPE_3 O = {p.x - window[pos_arrj].x, p.y - window[pos_arrj].y, p.z - window[pos_arrj].z};
@@ -591,23 +420,19 @@ __global__ void count_points_in_dense_cells_kernel(const int* cell_offsets, int 
     int global_tid = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
 
-    // 每个线程的局部和
     int local_sum = 0;
 
-    // 循环计算分配给该线程的点
     for (int i = global_tid; i < num_nonempty_cells; i += stride) {
         int num_points_in_cell = cell_offsets[i + 1] - cell_offsets[i];
         if (num_points_in_cell >= min_pts) {
             local_sum += num_points_in_cell;
-			atomicAdd(num_dense_cells, 1); // TODO：后面使用 shared_mem 优化
+			atomicAdd(num_dense_cells, 1);
         }
     }
 
-    // 将局部和存入共享内存
     shared_data[tid] = local_sum;
     __syncthreads();
 
-    // 线程块内归约
     for (int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s) {
             shared_data[tid] += shared_data[tid + s];
@@ -615,7 +440,6 @@ __global__ void count_points_in_dense_cells_kernel(const int* cell_offsets, int 
         __syncthreads();
     }
 
-    // 将块内的和写入全局内存
     if (tid == 0) {
         atomicAdd(num_points_in_dense_cells, shared_data[0]);
     }
@@ -654,7 +478,6 @@ __global__ void set_hybrid_spheres_info_kernel(
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= num_cells)
 		return;
-	// dense_cell 往后放，然后 sparse cells 往前放
 	const int num_points = offsets[idx + 1] - offsets[idx];
 	if (num_points < min_pts) {
 		int offset = atomicAdd(sparse_offset, num_points);

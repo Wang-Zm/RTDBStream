@@ -12,7 +12,6 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
         CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i);
         state.cell_point_num[cell_id]--;
     }
-    // 遍历 cell_points，查看 cell 中有多少点，若变少了，那么移除前面的点
     for (auto &t: state.cell_points) {
         if (int(t.second.size()) > state.cell_point_num[t.first]) {
             t.second.erase(t.second.begin(), t.second.begin() + t.second.size() - state.cell_point_num[t.first]);
@@ -28,7 +27,6 @@ void update_grid(ScanState &state, int update_pos, int window_left, int window_r
 }
 
 void update_grid_without_vector(ScanState &state, int update_pos, int window_left, int window_right) {    
-    // 1.更新 h_point_cell_id
     timer.startTimer(&timer.update_h_point_cell_id);
     for (int i = window_left; i < window_left + state.stride_size; i++) {
         CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // TODO: Can be implemented in GPU 
@@ -46,12 +44,10 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
     }
     timer.stopTimer(&timer.update_h_point_cell_id);
 
-    // 2.对 h_point_cell_id 排序，返回 pos_array
     timer.startTimer(&timer.sort_h_point_cell_id);
     int *pos_arr = state.pos_arr;
     CELL_ID_TYPE *point_cell_id = state.h_point_cell_id;
     
-    // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     int *new_pos_arr = state.new_pos_arr;
     int stride_left = update_pos * state.stride_size;
     for (int i = stride_left; i < stride_left + state.stride_size; i++) {
@@ -98,7 +94,6 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
 }
 
 // void update_grid_without_vector_parallel(ScanState &state, int update_pos, int window_left, int window_right) {    
-//     // 1.更新 h_point_cell_id
 //     timer.startTimer(&timer.update_h_point_cell_id);
 //     // #pragma omp parallel for
 //     for (int i = window_left; i < window_left + state.stride_size; i++) {
@@ -130,11 +125,9 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
 //     }
 //     timer.stopTimer(&timer.update_h_point_cell_id);
 
-//     // 2.对 h_point_cell_id 排序，返回 pos_array
 //     timer.startTimer(&timer.sort_h_point_cell_id);
 //     int *pos_arr = state.pos_arr;
 //     CELL_ID_TYPE *point_cell_id = state.h_point_cell_id;
-//     // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
 //     int *new_pos_arr = state.new_pos_arr;
 //     int stride_left = update_pos * state.stride_size;
 //     for (int i = stride_left; i < stride_left + state.stride_size; i++) {
@@ -186,16 +179,13 @@ void update_grid_without_vector(ScanState &state, int update_pos, int window_lef
 // }
 
 void update_grid_thrust(ScanState &state, int update_pos, int window_left, int window_right) {    
-    // 更新 point_cell_id
     timer.startTimer(&timer.update_h_point_cell_id);
     int stride_left = update_pos * state.stride_size;
     compute_cell_id(state.params.window + stride_left, state.params.point_cell_id + stride_left, state.stride_size,
                     state.params.min_value, state.params.cell_count, state.params.cell_length);
     timer.stopTimer(&timer.update_h_point_cell_id);
 
-    // 排序 new_pos_arr
     timer.startTimer(&timer.sort_h_point_cell_id);
-    // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     timer.startTimer(&timer.sort_new_stride);
     sortByCellIdAndOrder(state.params.new_pos_arr, state.params.point_cell_id, state.stride_size, stride_left);
     timer.stopTimer(&timer.sort_new_stride);
@@ -209,7 +199,6 @@ void update_grid_thrust(ScanState &state, int update_pos, int window_left, int w
 }
 
 void update_grid_using_unordered_map(ScanState &state, int update_pos, int window_left, int window_right) {
-    // 1.更新 h_point_cell_id
     timer.startTimer(&timer.update_h_point_cell_id);
     for (int i = window_left; i < window_left + state.stride_size; i++) {
         CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // TODO: Can be implemented in GPU 
@@ -229,11 +218,9 @@ void update_grid_using_unordered_map(ScanState &state, int update_pos, int windo
     }
     timer.stopTimer(&timer.update_h_point_cell_id);
 
-    // 2.对 h_point_cell_id 排序，返回 pos_array
     timer.startTimer(&timer.sort_h_point_cell_id);
     int *pos_arr = state.pos_arr;
     CELL_ID_TYPE *point_cell_id = state.h_point_cell_id;
-    // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     int *new_pos_arr = state.new_pos_arr;
     int stride_left = update_pos * state.stride_size;
     for (int i = stride_left; i < stride_left + state.stride_size; i++) {
@@ -281,7 +268,6 @@ void update_grid_using_unordered_map(ScanState &state, int update_pos, int windo
 
 void update_grid_with_timestamp(ScanState &state, int update_pos, int window_left, int window_right) {    
     unordered_map<CELL_ID_TYPE, int> remove_mp, add_mp;
-    // 1.更新 h_point_cell_id
     timer.startTimer(&timer.update_h_point_cell_id);
     for (int i = window_left; i < window_left + state.stride_size; i++) {
         CELL_ID_TYPE cell_id = get_cell_id(state.h_data, state.min_value, state.cell_count, state.cell_length, i); // TODO: Can be implemented in GPU 
@@ -298,11 +284,9 @@ void update_grid_with_timestamp(ScanState &state, int update_pos, int window_lef
     }
     timer.stopTimer(&timer.update_h_point_cell_id);
 
-    // 2.对 h_point_cell_id 排序，返回 pos_array
     timer.startTimer(&timer.sort_h_point_cell_id);
     int *pos_arr = state.pos_arr;
     CELL_ID_TYPE *point_cell_id = state.h_point_cell_id;
-    // 对 point_cell_id 的 stride 部分排序，然后与原有的 pos_arr 合并
     int *new_pos_arr = state.new_pos_arr;
     int stride_left = update_pos * state.stride_size;
     for (int i = stride_left; i < stride_left + state.stride_size; i++) {
@@ -324,7 +308,6 @@ void update_grid_with_timestamp(ScanState &state, int update_pos, int window_lef
             i1++;
             continue;
         }
-        // tmp_pos_arr 肯定先载入 pos_arr 中的，所以需要记住原本的 pos_arr 剩下了多少
         if (point_cell_id[pos_arr[i1]] < point_cell_id[new_pos_arr[i2]]) {
             // tmp_pos_arr[i3++] = pos_arr[i1++];
             int num_points = state.cell_point_num[point_cell_id[pos_arr[i1]]] - remove_mp[point_cell_id[pos_arr[i1]]];

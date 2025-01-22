@@ -127,7 +127,6 @@ void make_gas(ScanState &state) {
     printf("Final GAS size: %f MB\n", (float)final_gas_size / (1024 * 1024));
 
 #if OPTIMIZATION_LEVEL == 8
-    // * 为 hybrid gas 申请空间
     vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
     vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
     OptixAccelBufferSizes gas_buffer_sizes_hybrid;
@@ -147,7 +146,6 @@ void make_gas(ScanState &state) {
 }
 
 // void make_gas_for_each_stride(ScanState &state, int unit_num) {
-//     // * 为每个 stride bvh 设置 temp buffer，output buffer，gas handle
 //     OptixAccelBuildOptions accel_options = {};
 //     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD;
 //     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
@@ -204,14 +202,12 @@ void make_gas(ScanState &state) {
 //         // printf("Final GAS size: %f MB\n", (float)compactedSizeOffset / (1024 * 1024));
 //     }
 
-//     // * 为 in_stride 申请空间
 //     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_temp_buffer),
 //                state.gas_buffer_sizes.tempSizeInBytes));
 //     size_t compactedSizeOffset = roundUp<size_t>(state.gas_buffer_sizes.outputSizeInBytes, 8ull);
 //     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_output_buffer),
 //                compactedSizeOffset + 8));
 
-//     // * 为 hybrid gas 申请空间
 //     vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
 //     kGenAABB(state.params.window, state.radius, state.window_size, d_aabb);
 //     OptixAccelBufferSizes gas_buffer_sizes_hybrid;
@@ -230,7 +226,6 @@ void make_gas(ScanState &state) {
 // }
 
 void make_gas_for_each_stride(ScanState &state, int unit_num) {
-    // * 为每个 stride bvh 设置 temp buffer，output buffer，gas handle
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD;
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
@@ -290,14 +285,12 @@ void make_gas_for_each_stride(ScanState &state, int unit_num) {
         // printf("Final GAS size: %f MB\n", (float)compactedSizeOffset / (1024 * 1024));
     }
 
-    // * 为 in_stride 申请空间
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_temp_buffer),
                state.gas_buffer_sizes.tempSizeInBytes));
     size_t compactedSizeOffset = roundUp<size_t>(state.gas_buffer_sizes.outputSizeInBytes, 8ull);
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.d_gas_output_buffer),
                compactedSizeOffset + 8));
 
-    // * 为 hybrid gas 申请空间
     vertex_input.customPrimitiveArray.numPrimitives = state.window_size;
     vertex_input.customPrimitiveArray.aabbBuffers   = &state.d_aabb_ptr;
     OptixAccelBufferSizes gas_buffer_sizes_hybrid;
@@ -531,7 +524,6 @@ void rebuild_gas(ScanState &state, int update_pos) {
 void rebuild_gas(ScanState &state) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
-    // 改为 OPTIX_BUILD_FLAG_PREFER_FAST_TRACE 时会有性能提升但提升不多
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
     state.vertex_input.customPrimitiveArray.aabbBuffers = &state.d_aabb_ptr;
@@ -631,7 +623,6 @@ void rebuild_gas_from_all_points_in_window(ScanState &state) {
         ));
 }
 
-// update_num: 更新 AABB 的数量、重新构建 BVH tree 的点数
 void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle& gas_handle) {
     OptixAccelBuildOptions accel_options = {};
     accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_BUILD; // * bring higher performance compared to OPTIX_BUILD_FLAG_PREFER_FAST_TRACE
@@ -639,7 +630,7 @@ void rebuild_gas_stride(ScanState &state, int update_pos, OptixTraversableHandle
 
     // update aabb
     OptixAabb *d_aabb = reinterpret_cast<OptixAabb *>(state.d_aabb_ptr);
-    if (gas_handle == state.in_stride_gas_handle) { // 复制一次
+    if (gas_handle == state.in_stride_gas_handle) {
         kGenAABB(state.params.window + update_pos * state.stride_size,
                  state.radius,
                  state.stride_size,
@@ -734,7 +725,7 @@ void make_program_groups(ScanState &state) {
 
     OptixProgramGroupDesc raygen_prog_group_desc = {};
     raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
+    raygen_prog_group_desc.raygen.module = state.module;
 #if OPTIMIZATION_LEVEL == 0
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__naive";
 #elif OPTIMIZATION_LEVEL == 2 || OPTIMIZATION_LEVEL == 5 || OPTIMIZATION_LEVEL == 7 || OPTIMIZATION_LEVEL == 8 || OPTIMIZATION_LEVEL == 9
@@ -792,7 +783,7 @@ void make_program_groups(ScanState &state) {
 
     // * cluster
     raygen_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    raygen_prog_group_desc.raygen.module = state.module; // 指定 cu 文件名
+    raygen_prog_group_desc.raygen.module = state.module;
     raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__cluster";
     OPTIX_CHECK_LOG(optixProgramGroupCreate(
         state.context,
@@ -839,7 +830,7 @@ void make_pipeline(ScanState &state) {
 
     OptixPipelineLinkOptions pipeline_link_options = {};
     pipeline_link_options.maxTraceDepth = max_trace_depth;
-    pipeline_link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL; // TODO: 或可更改
+    pipeline_link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
     size_t sizeof_log = sizeof(log);
     OPTIX_CHECK_LOG(optixPipelineCreate(
         state.context,

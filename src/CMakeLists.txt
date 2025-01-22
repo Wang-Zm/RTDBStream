@@ -79,7 +79,7 @@
 
 # This sets up the name of our project.  For our purposes the main thing this controls is
 # the name of the VS solution file.
-project(OptiX-Samples)
+project(RTDBStream)
 
 # This enforces a particular version of CMake that we require to process the script files
 # properly.  We rely on CXX_STANDARD, which was added in CMake 3.1.
@@ -367,13 +367,6 @@ function(OPTIX_add_sample_executable target_name_base target_name_var)
   if(USING_GNU_CXX)
     target_link_libraries( ${target_name} m ) # Explicitly link against math library (C samples don't do that by default)
   endif()
-
-  # This uses dynamically linked libraries, which is needed if you were to use the memstat library.
-  #https://stackoverflow.com/questions/63153342/cmake-undefined-reference-to-symbol-dlsymglibc-2-2-5-even-though-i-link-with
-  # if(USE_SHARED_CUDA_LIBS)
-  #   target_link_libraries( ${target_name} -ldl -lmemstatlib )
-  #   add_compile_definitions(MEM_STATS)
-  # endif()
 endfunction()
 
 #########################################################

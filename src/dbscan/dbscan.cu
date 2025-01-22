@@ -23,7 +23,7 @@ static __forceinline__ __device__ void unite(int ray_id, int primIdx, int* cid) 
     int ray_rep = find_repres(ray_id, cid);
     int prim_rep = find_repres(primIdx, cid);
     bool repeat;
-    do { // 设置 core
+    do { // set core
         repeat = false;
         if (ray_rep != prim_rep) {
             int ret;
@@ -67,7 +67,7 @@ extern "C" __global__ void __raygen__naive() {
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
     unsigned int ray_id  = idx.x;
-    unsigned int op      = 0; // 占空
+    unsigned int op      = 0;
     optixTrace(
             params.handle,
             ray_origin,
@@ -94,7 +94,7 @@ extern "C" __global__ void __raygen__naive() {
 extern "C" __global__ void __raygen__identify_cores() {
     // Lookup our location within the launch grid
     const uint3 idx = optixGetLaunchIndex();    
-    if (idx.y == 0 && idx.x >= params.stride_left && idx.x < params.stride_right) return; //! 减少部分光线的发射
+    if (idx.y == 0 && idx.x >= params.stride_left && idx.x < params.stride_right) return;
 
     // Map our launch idx to a screen location and create a ray from the camera
     // location through the screen 
@@ -238,7 +238,7 @@ extern "C" __global__ void __intersection__identify_cores() {
         } else if (op == 1) {
             atomicAdd(params.nn + ray_id, 1);
             if (ray_id < params.stride_left || ray_id >= params.stride_right) {
-                atomicAdd(params.nn + params.stride_left + primIdx, 1); // stride 外部的点邻居增加后，stride 中的点的邻居也同步增加
+                atomicAdd(params.nn + params.stride_left + primIdx, 1);
             }
         }
     }
@@ -279,7 +279,7 @@ extern "C" __global__ void __miss__ms() {
 extern "C" __global__ void __raygen__cluster() {
     // Lookup our location within the launch grid
     const uint3 idx = optixGetLaunchIndex();
-    if (params.label[idx.x] != 0) return; // * 从 core 发射光线 
+    if (params.label[idx.x] != 0) return;
 
     // Map our launch idx to a screen location and create a ray from the camera location through the screen 
     // float3 ray_origin, ray_direction;
@@ -293,11 +293,11 @@ extern "C" __global__ void __raygen__cluster() {
     unsigned int intersection_test_num = 0;
     unsigned int hit_num = 0;
     unsigned int ray_id  = idx.x;
-    // unsigned int op      = params.point_cell_id[ray_id];   // 占空
-    unsigned int op      = 0;   // 占空
-    // unsigned int op      = params.point_status[ray_id];   // 占空 // TODO：可记录是否是 sparse point，这个状态可以用
+    // unsigned int op      = params.point_cell_id[ray_id];
+    unsigned int op      = 0;
+    // unsigned int op      = params.point_status[ray_id];
     optixTrace(
-            params.handle,      // 应当是针对 cores 构建的树，此时为方便，可直接基于当前窗口构建树
+            params.handle,
             ray_origin,
             ray_direction,
             params.tmin,        // Min intersection distance
@@ -323,14 +323,13 @@ extern "C" __global__ void __raygen__cluster() {
 extern "C" __global__ void __intersection__cluster() {
     unsigned primIdx = optixGetPrimitiveIndex();
     unsigned ray_id  = optixGetPayload_2();
-    if (params.label[primIdx] == 0 && primIdx > ray_id) return; // 是 core 且 id 靠后，则直接退出 => 减少距离计算次数
+    if (params.label[primIdx] == 0 && primIdx > ray_id) return;
 #if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
 #endif
-    // 先判别是否已经属于同一个 cluster，prune，减少距离计算
     int ray_rep = find_repres(ray_id, params.cluster_id);
     int prim_rep = find_repres(primIdx, params.cluster_id);
-    if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
+    if (ray_rep == prim_rep) return;
 #if DEBUG_INFO == 1
     optixSetPayload_1(optixGetPayload_1() + 1);
 #endif
@@ -344,11 +343,10 @@ extern "C" __global__ void __intersection__cluster() {
     if (sqdist >= params.radius2) return;
     if (params.label[primIdx] == 0) {
         unite(ray_id, primIdx, params.cluster_id);
-    } else { // border 处暂直接设置 direct parent 即可
+    } else {
         if (params.cluster_id[primIdx] == primIdx) {
             atomicCAS(params.cluster_id + primIdx, primIdx, ray_id);
-            // 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
-            params.label[primIdx] = 1; // 设置为 border
+            params.label[primIdx] = 1; // set to border
         }
     }
 }
@@ -400,22 +398,20 @@ extern "C" __global__ void __intersection__cluster_bvh_from_sparse_points() {
     unsigned ray_id  = optixGetPayload_2();
     int prim_idx_in_window = params.center_idx_in_window[primIdx];
     
-    // 先判别是否已经属于同一个 cluster，prune，减少距离计算
     int ray_rep = find_repres(ray_id, params.cluster_id);
     int prim_rep = find_repres(prim_idx_in_window, params.cluster_id);
-    if (ray_rep == prim_rep) return; // 提前聚类可以减少距离计算，可以统计距离计算次数进行分析
+    if (ray_rep == prim_rep) return;
 #if DEBUG_INFO == 1
     optixSetPayload_0(optixGetPayload_0() + 1);
 #endif
     DATA_TYPE sqdist = compute_dist(ray_id, primIdx, params.window, params.centers);
     if (sqdist >= params.radius2) return;
     if (params.label[prim_idx_in_window] == 0) {
-        unite(ray_id, prim_idx_in_window, params.cluster_id); // 通过所有的 core 与 BVH tree 相交。sparse 部分的点可能出现重复，但是无所谓，都会收敛到最小的 id 那里。现在仍然出现 dense cell 不完全的情况
-    } else { // border 处暂直接设置 direct parent 即可
+        unite(ray_id, prim_idx_in_window, params.cluster_id);
+    } else {
         if (params.cluster_id[prim_idx_in_window] == prim_idx_in_window) {
             atomicCAS(params.cluster_id + prim_idx_in_window, prim_idx_in_window, ray_id);
         }
-        // 1) 若对应点的 cid 不是自己，说明已经设置，直接跳过 2) 若对应点的 cid 是自己，说明未设置，此时开始设置；设置过程中可能有其余的线程也在设置，这样可能连续设置两次，但是不会出现问题问题，就是多设置几次[暂时使用这种策略]
-        params.label[prim_idx_in_window] = 1; // 设置为 border
+        params.label[prim_idx_in_window] = 1;
     }
 }

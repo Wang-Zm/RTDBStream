@@ -297,7 +297,6 @@ void unite(int x, int y, int* cid) {
 }
 
 void cluster_with_cpu(ScanState &state, Timer &timer) {
-    // 1. 查找所有点的邻居，判别是否是 core，打上 core label
     int *check_nn = state.check_h_nn; 
     int *check_label = state.check_h_label;
     int *check_cluster_id = state.check_h_cluster_id;
@@ -323,12 +322,11 @@ void cluster_with_cpu(ScanState &state, Timer &timer) {
         else check_label[i] = 2;
     }
 
-    // 2. 从一个 core 开始 bfs，设置所有的点是该 core_id
     bool *vis = (bool*) malloc(state.window_size * sizeof(bool));
     memset(vis, false, state.window_size * sizeof(bool));
     queue<int> q;
     for (int i = 0; i < state.window_size; i++) {
-        if (vis[i] || check_label[i] != 0) continue; // 对于 border，应该特殊处理：1）不加到 queue 中
+        if (vis[i] || check_label[i] != 0) continue;
         vis[i] = true;
         check_cluster_id[i] = i;
         q.push(i);
@@ -386,7 +384,6 @@ bool check(ScanState &state, int window_id, Timer &timer) {
     // cluster_with_cpu(state, timer);
     cluster_with_cuda(state, timer);
     
-    // 将 gpu 中的结果传回来
     CUDA_CHECK(cudaMemcpy(state.h_nn, state.params.nn, state.window_size * sizeof(int), cudaMemcpyDeviceToHost));
 
     int *nn = state.h_nn, *check_nn = state.check_h_nn;
@@ -400,7 +397,7 @@ bool check(ScanState &state, int window_id, Timer &timer) {
     //     }
     // }
     for (int i = 0; i < state.window_size; i++) {
-        if (label[i] != check_label[i]) { // ! cluster's problem
+        if (label[i] != check_label[i]) {
             printf("Error on window %d: label[%d] = %d, check_label[%d] = %d; nn[%d] = %d, check_nn[%d] = %d\n", 
                     window_id, i, label[i], i, check_label[i], i, state.h_nn[i], i, state.check_h_nn[i]);
             return false;
@@ -420,7 +417,7 @@ bool check(ScanState &state, int window_id, Timer &timer) {
                 printf("cell_point_num = %d\n", point_num);
                 return false;
             }
-        } else if (label[i] == 1) { // border可能属于不同的cluster
+        } else if (label[i] == 1) {
             DATA_TYPE_3 p = state.h_window[i];
             bool is_correct = false;
             for (int j = 0; j < state.window_size; j++) {

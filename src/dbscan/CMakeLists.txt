@@ -26,7 +26,6 @@ OPTIX_add_sample_executable( dbscan target_name
 # 使用 std::parallel_sort
 find_package(OpenMP REQUIRED)
 find_package(TBB REQUIRED)
-# 如果找到 OpenMP，设置编译选项
 if (OpenMP_FOUND)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")

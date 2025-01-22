@@ -18,16 +18,13 @@ print('record_num =', len(data))
 for i in range(len(data)):
     data[i][2] /= 300000
     
-# 获取列表的第四个元素
 def takeSecond(elem):
     return elem[3]
 
 data = np.array(data)
-# 指定第四个元素排序：时间戳
 # data.sort(key=takeSecond)
 data = data[data[:, 3].argsort()]
 data = data[:, :3]
 print(data.shape)
-# 将 data 写到文本文件中
 # np.savetxt('dataset/geolife.txt', data, delimiter=',')
 data.tofile('dataset/geolife.bin')
