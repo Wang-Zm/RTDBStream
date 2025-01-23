@@ -385,7 +385,7 @@ def time_distribution(colors):
     record_x_name = ['STK', 'RBF', 'TAO', 'GeoLife']
     record_labels = [
         'Transferring Data',
-        'Updating Units',
+        'Updating Grid',
         'Building BVH tree',
         'Identifying Cores',
         'Clustering',
